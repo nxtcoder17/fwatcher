@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -24,9 +25,11 @@ type eventInfo struct {
 }
 
 type fsnWatcher struct {
-	watcher  *fsnotify.Watcher
-	eventMap map[string]eventInfo
-	logger   logging.Logger
+	watcher          *fsnotify.Watcher
+	eventMap         map[string]eventInfo
+	logger           logging.Logger
+	watchExtensions  []string
+	ignoreExtensions []string
 }
 
 type Event string
@@ -52,6 +55,31 @@ func (f fsnWatcher) WatchEvents(watcherFunc func(event Event, fp string) error) 
 
 				f.logger.Debug(fmt.Sprintf("event %+v received", event))
 
+				shouldIgnore := false
+				for i := range f.ignoreExtensions {
+					if strings.HasSuffix(event.Name, f.ignoreExtensions[i]) {
+						f.logger.Debug(fmt.Sprintf("event occured on file %s, ignoring due to filters", event.Name))
+						shouldIgnore = true
+						break
+					}
+				}
+
+				if shouldIgnore {
+					continue
+				}
+
+				shouldWatch := false
+				for i := range f.watchExtensions {
+					if strings.HasSuffix(event.Name, f.watchExtensions[i]) {
+						shouldWatch = true
+						break
+					}
+				}
+
+				if !shouldWatch {
+					continue
+				}
+
 				eInfo, ok := f.eventMap[event.Name]
 				if !ok {
 					eInfo = eventInfo{Time: time.Time{}, FileInfo: nil}
@@ -61,17 +89,18 @@ func (f fsnWatcher) WatchEvents(watcherFunc func(event Event, fp string) error) 
 					f.logger.Debug("too many events ... ignoring")
 				}
 
-				lstat, err := os.Lstat(event.Name)
-				if err != nil {
-					f.logger.Error(err)
-					return
-				}
-				f.eventMap[event.Name] = eventInfo{Time: time.Now(), FileInfo: lstat}
+				//lstat, err := os.Lstat(event.Name)
+				//if err != nil {
+				//	f.logger.Error(err)
+				//	return
+				//}
+				//f.eventMap[event.Name] = eventInfo{Time: time.Now(), FileInfo: lstat}
+				f.eventMap[event.Name] = eventInfo{Time: time.Now(), FileInfo: nil}
 
-				if eInfo.FileInfo != nil && lstat.Size() == eInfo.FileInfo.Size() {
-					f.logger.Debug(fmt.Sprintf("%s has not changed", event.Name))
-					continue
-				}
+				//if eInfo.FileInfo != nil && lstat.Size() == eInfo.FileInfo.Size() {
+				//	f.logger.Debug(fmt.Sprintf("%s has not changed", event.Name))
+				//	continue
+				//}
 
 				if err := watcherFunc(Event(event.String()), event.Name); err != nil {
 					f.logger.Error(err)
@@ -120,7 +149,9 @@ func (f fsnWatcher) Close() error {
 }
 
 type WatcherCtx struct {
-	Logger logging.Logger
+	Logger           logging.Logger
+	WatchExtensions  []string
+	IgnoreExtensions []string
 }
 
 func NewWatcher(ctx WatcherCtx) Watcher {
@@ -128,5 +159,8 @@ func NewWatcher(ctx WatcherCtx) Watcher {
 	if err != nil {
 		log.Fatal(err)
 	}
-	return &fsnWatcher{watcher: watcher, logger: ctx.Logger}
+	return &fsnWatcher{watcher: watcher, logger: ctx.Logger,
+		watchExtensions:  ctx.WatchExtensions,
+		ignoreExtensions: ctx.IgnoreExtensions,
+	}
 }
