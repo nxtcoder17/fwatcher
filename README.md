@@ -23,4 +23,6 @@ GLOBAL OPTIONS:
    --help, -h                                                                           show help
 ```
 
+[See fwatcher in action](https://github.com/nxtcoder17/fwatcher/assets/22402557/ce1b1908-cb9f-438f-85c1-3a8858265c40)
+
 ![fwatcher recording](https://github.com/nxtcoder17/fwatcher/assets/22402557/ce1b1908-cb9f-438f-85c1-3a8858265c40)
