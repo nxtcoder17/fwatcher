@@ -3,15 +3,17 @@ package main
 import (
 	"context"
 	"fmt"
-	fswatcher "github.com/nxtcoder17/fwatcher/pkg/fs-watcher"
-	"github.com/nxtcoder17/fwatcher/pkg/logging"
-	"github.com/urfave/cli/v2"
 	"log"
 	"os"
 	"os/exec"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
+
+	fswatcher "github.com/nxtcoder17/fwatcher/pkg/fs-watcher"
+	"github.com/nxtcoder17/fwatcher/pkg/logging"
+	"github.com/urfave/cli/v2"
 )
 
 type ProgramManager struct {
@@ -34,7 +36,7 @@ func (pm *ProgramManager) Exec(execCmd string) error {
 	ctx, cancelFunc := context.WithCancel(context.Background())
 	defer cancelFunc()
 
-	cmd := exec.CommandContext(ctx, "bash", "-c", execCmd)
+	cmd := exec.CommandContext(ctx, "sh", "-c", execCmd)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Stdin = os.Stdin
@@ -57,10 +59,10 @@ func (pm *ProgramManager) Exec(execCmd string) error {
 	}()
 
 	if err := cmd.Wait(); err != nil {
-		pm.logger.Debug(fmt.Sprintf("wait terminated as (%s) received", err.Error()))
-		if err.Error() != "signal: killed" {
-			return err
+		if strings.HasPrefix(err.Error(), "signal:") {
+			pm.logger.Debug(fmt.Sprintf("wait terminated as %s received", err.Error()))
 		}
+		return err
 	}
 
 	return nil
@@ -83,7 +85,7 @@ func main() {
 				Name:     "exec",
 				Usage:    "specifies command to execute on file change",
 				Required: true,
-				Aliases:  []string{"e"},
+				// Aliases:  []string{"exec"},
 			},
 			&cli.PathFlag{
 				Name:     "dir",
@@ -107,9 +109,15 @@ func main() {
 			},
 			&cli.StringSliceFlag{
 				Name:     "ignore-extensions",
-				Usage:    "file extensions to watch on",
+				Usage:    "file extensions to ignore watching on",
 				Required: false,
 				Aliases:  []string{"iext"},
+			},
+			&cli.StringSliceFlag{
+				Name:     "exclude-dir",
+				Usage:    "directory to exclude from watching",
+				Required: false,
+				Aliases:  []string{"exclude"},
 			},
 		},
 
@@ -124,10 +132,16 @@ func main() {
 
 			execCmd := ctx.String("exec")
 
-			wExtensions := ctx.StringSlice("extensions")
-			iExtensions := ctx.StringSlice("ignore-extensions")
+			watchExt := ctx.StringSlice("extensions")
+			ignoreExt := ctx.StringSlice("ignore-extensions")
+			excludeDirs := ctx.StringSlice("exclude-dir")
 
-			watcher := fswatcher.NewWatcher(fswatcher.WatcherCtx{Logger: logger, WatchExtensions: wExtensions, IgnoreExtensions: iExtensions})
+			watcher := fswatcher.NewWatcher(fswatcher.WatcherCtx{
+				Logger:           logger,
+				WatchExtensions:  watchExt,
+				IgnoreExtensions: ignoreExt,
+				ExcludeDirs:      excludeDirs,
+			})
 			if err := watcher.RecursiveAdd(ctx.String("dir")); err != nil {
 				panic(err)
 			}

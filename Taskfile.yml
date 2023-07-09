@@ -1,6 +1,31 @@
 version: 3
 
+vars:
+  Name: "fwatcher"
+  Bin: "./bin/{{.Name}}"
+
 tasks:
   dev:
     cmds:
       - go run .
+
+  dev:build:
+    cmds:
+      - go build -o {{.Bin}}
+
+  build:
+    cmds:
+      - go build -o {{.Bin}}
+      - upx {{.Bin}}
+
+  example:http-server:
+    cmds:
+      - task: dev:build
+      - |+
+        {{.Bin}} --debug  --ext '.go' --exec 'go run ./examples/http-server/main.go'
+
+  install:
+    vars:
+    cmds:
+      - task: build
+      - ln -sf $PWD/{{.Bin}} $HOME/.local/bin/{{.Name}}
