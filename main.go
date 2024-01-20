@@ -24,7 +24,6 @@ type ProgramManager struct {
 func NewProgramManager(logger logging.Logger) *ProgramManager {
 	done := make(chan os.Signal, 1)
 	signal.Notify(done, syscall.SIGTERM)
-	signal.Notify(done, syscall.SIGKILL)
 
 	return &ProgramManager{
 		done:   done,
