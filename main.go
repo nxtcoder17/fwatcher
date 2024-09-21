@@ -3,72 +3,22 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"strings"
-	"syscall"
 	"time"
 
-	fswatcher "github.com/nxtcoder17/fwatcher/pkg/fs-watcher"
+	"github.com/nxtcoder17/fwatcher/pkg/executor"
 	"github.com/nxtcoder17/fwatcher/pkg/logging"
+	fswatcher "github.com/nxtcoder17/fwatcher/pkg/watcher"
 	"github.com/urfave/cli/v2"
 )
 
-type ProgramManager struct {
-	done   chan os.Signal
-	logger logging.Logger
-}
-
-func NewProgramManager(logger logging.Logger) *ProgramManager {
-	done := make(chan os.Signal, 1)
-	signal.Notify(done, syscall.SIGTERM)
-
-	return &ProgramManager{
-		done:   done,
-		logger: logger,
-	}
-}
-
-func (pm *ProgramManager) Exec(execCmd string) error {
-	ctx, cancelFunc := context.WithCancel(context.Background())
-	defer cancelFunc()
-
-	cmd := exec.CommandContext(ctx, "sh", "-c", execCmd)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	cmd.Stdin = os.Stdin
-
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-
-	if err := cmd.Start(); err != nil {
-		return err
-	}
-
-	defer func() {
-		syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
-	}()
-
-	go func() {
-		select {
-		case <-pm.done:
-			cancelFunc()
-		}
-	}()
-
-	if err := cmd.Wait(); err != nil {
-		if strings.HasPrefix(err.Error(), "signal:") {
-			pm.logger.Debug(fmt.Sprintf("wait terminated as %s received", err.Error()))
-		}
-		return err
-	}
-
-	return nil
-}
-
 func main() {
-	logger := logging.NewLogger()
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill)
+	defer stop()
 
 	app := &cli.App{
 		Name:  "fwatcher",
@@ -80,11 +30,18 @@ func main() {
 				Required: false,
 				Value:    false,
 			},
+			&cli.BoolFlag{
+				Name:     "no-default-ignore",
+				Usage:    "disables ignoring from default ignore list",
+				Required: false,
+				Aliases:  []string{"I"},
+				Value:    false,
+			},
 			&cli.StringFlag{
-				Name:     "exec",
+				Name:     "command",
 				Usage:    "specifies command to execute on file change",
-				Required: true,
-				// Aliases:  []string{"exec"},
+				Required: false,
+				Aliases:  []string{"c"},
 			},
 			&cli.PathFlag{
 				Name:     "dir",
@@ -101,69 +58,103 @@ func main() {
 				EnvVars: nil,
 			},
 			&cli.StringSliceFlag{
-				Name:     "extensions",
-				Usage:    "file extensions to watch on",
+				Name:     "ignore-suffixes",
+				Usage:    "files suffixes to ignore",
 				Required: false,
-				Aliases:  []string{"ext"},
-			},
-			&cli.StringSliceFlag{
-				Name:     "ignore-extensions",
-				Usage:    "file extensions to ignore watching on",
-				Required: false,
-				Aliases:  []string{"iext"},
+				Aliases:  []string{"i"},
 			},
 			&cli.StringSliceFlag{
 				Name:     "exclude-dir",
 				Usage:    "directory to exclude from watching",
 				Required: false,
-				Aliases:  []string{"exclude"},
+				Aliases:  []string{"x", "e"},
+			},
+			&cli.BoolFlag{
+				Name:     "no-default-ignore",
+				Usage:    "disables ignoring from default ignore list",
+				Required: false,
+				Aliases:  []string{"I"},
+				Value:    false,
 			},
 		},
 
-		Action: func(ctx *cli.Context) error {
-			logger.SetLogLevel(logging.InfoLevel)
-			isDebugMode := ctx.Bool("debug")
-			if isDebugMode {
-				logger.SetLogLevel(logging.DebugLevel)
+		Action: func(cctx *cli.Context) error {
+			logger := logging.NewSlogLogger(logging.SlogOptions{
+				ShowTimestamp:      false,
+				ShowCaller:         false,
+				ShowDebugLogs:      cctx.Bool("debug"),
+				SetAsDefaultLogger: true,
+			})
+
+			var execCmd string
+			var execArgs []string
+
+			if cctx.String("command") != "" {
+				s := strings.SplitN(cctx.String("command"), " ", 2)
+
+				switch len(s) {
+				case 0:
+					return fmt.Errorf("invalid command")
+				case 1:
+					execCmd = s[0]
+					execArgs = nil
+				case 2:
+					execCmd = s[0]
+					execArgs = strings.Split(s[1], " ")
+				}
+			} else {
+				logger.Debug("no command specified, using args")
+				if cctx.Args().Len() == 0 {
+					return fmt.Errorf("no command specified")
+				}
+
+				execCmd = cctx.Args().First()
+				execArgs = cctx.Args().Tail()
 			}
 
-			pm := NewProgramManager(logger)
-
-			execCmd := ctx.String("exec")
-
-			watchExt := ctx.StringSlice("extensions")
-			ignoreExt := ctx.StringSlice("ignore-extensions")
-			excludeDirs := ctx.StringSlice("exclude-dir")
-
-			watcher := fswatcher.NewWatcher(fswatcher.WatcherCtx{
-				Logger:           logger,
-				WatchExtensions:  watchExt,
-				IgnoreExtensions: ignoreExt,
-				ExcludeDirs:      excludeDirs,
+			ex := executor.NewExecutor(ctx, executor.ExecutorArgs{
+				Logger: logger,
+				Command: func(context.Context) *exec.Cmd {
+					cmd := exec.Command(execCmd, execArgs...)
+					cmd.Stdout = os.Stdout
+					cmd.Stderr = os.Stderr
+					cmd.Stdin = os.Stdin
+					return cmd
+				},
 			})
-			if err := watcher.RecursiveAdd(ctx.String("dir")); err != nil {
+
+			watcher, err := fswatcher.NewWatcher(fswatcher.WatcherArgs{
+				Logger:               logger,
+				IgnoreSuffixes:       cctx.StringSlice("ignore-suffixes"),
+				ExcludeDirs:          cctx.StringSlice("exclude-dir"),
+				UseDefaultIgnoreList: !cctx.Bool("no-global-ignore"),
+			})
+			if err != nil {
 				panic(err)
 			}
 
-			go pm.Exec(execCmd)
-			defer func() {
-				pm.done <- syscall.SIGKILL
-			}()
+			if err := watcher.RecursiveAdd(cctx.String("dir")); err != nil {
+				panic(err)
+			}
+
+			go ex.Exec()
 
 			go func() {
-				select {
-				case <-ctx.Done():
-					print("ending ...")
-					pm.done <- syscall.SIGKILL
-					time.Sleep(100 * time.Millisecond)
-					os.Exit(0)
-				}
+				<-ctx.Done()
+				logger.Debug("fwatcher is closing ...")
+				<-time.After(200 * time.Millisecond)
+				os.Exit(0)
 			}()
 
 			watcher.WatchEvents(func(event fswatcher.Event, fp string) error {
-				pm.done <- syscall.SIGKILL
-				logger.Info(fmt.Sprintf("[RELOADING] due changes in %s", fp))
-				go pm.Exec(execCmd)
+				relPath, err := filepath.Rel(cctx.String("dir"), fp)
+				if err != nil {
+					return err
+				}
+				logger.Info(fmt.Sprintf("[RELOADING] due changes in %s", relPath))
+				ex.Kill()
+				<-time.After(100 * time.Millisecond)
+				go ex.Exec()
 				return nil
 			})
 
@@ -171,10 +162,7 @@ func main() {
 		},
 	}
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill)
-	defer stop()
-
 	if err := app.RunContext(ctx, os.Args); err != nil {
-		log.Fatal(err)
+		os.Exit(1)
 	}
 }
