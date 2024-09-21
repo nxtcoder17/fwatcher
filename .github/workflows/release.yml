@@ -1,0 +1,96 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-binary:
+    strategy:
+      fail-fast: true
+      matrix:
+        os: [ubuntu-latest, macos-14, macos-13]
+        arch: [amd64, arm64]
+        include:
+          - os: ubuntu-latest
+            goos: linux
+            platform: linux
+          - os: macos-13
+            goos: darwin
+            platform: darwin
+          - os: macos-14
+            goos: darwin
+            platform: darwin
+        exclude:
+          - os: macos-14
+            arch: amd64
+          - os: macos-13
+            arch: arm64
+    name: Building fwatcher-${{ matrix.platform }}-${{ matrix.arch }}
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: nxtcoder17/actions/setup-cache-go@v1
+        with:
+          cache_key: "fwatcher"
+          working_directory: .
+
+      # it will set 2 env variables
+      # IMAGE_TAG - image tag
+      # OVERRIDE_PUSHED_IMAGE - if true, it will not use pushed image tag
+      - uses: nxtcoder17/actions/generate-image-tag@v1
+        id: tag_name
+
+      - uses: nxtcoder17/actions/setup-nix-cachix@v1
+        with:
+          flake_lock: "./flake.lock"
+          nix_develop_arguments: ".#default"
+          cachix_cache_name: ${{ secrets.CACHIX_CACHE_NAME }}
+          cachix_auth_token:  ${{ secrets.CACHIX_AUTH_TOKEN }}
+
+
+      - name: Build Binary
+        shell: bash
+        run: |+
+          task build version=${IMAGE_TAG} GOOS=${{matrix.goos}} GOARCH=${{matrix.arch}} upx=${{ matrix.platform == 'linux' }} binary=fwatcher-${{matrix.goos}}-${{matrix.arch}}
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: fwatcher-${{ matrix.platform }}-${{ matrix.arch }}
+          path: bin/*
+
+  release:
+    permissions:
+      contents: write
+      packages: write
+
+    needs: build-binary
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ${{ github.workspace }}/binaries
+          pattern: "fwatcher-*"
+
+      - name: flattening all the artifacts
+        shell: bash
+        run: |+
+          ls -R ${{ github.workspace }}/binaries
+          mkdir -p  ${{ github.workspace }}/upload/binaries
+          shopt -s globstar
+          file ./** | grep 'executable,' | awk -F: '{print $1}' | xargs -I {} cp {} ${{ github.workspace }}/upload/binaries
+          shopt -u globstar
+
+      - uses: nxtcoder17/actions/generate-image-tag@v1
+        id: tag_name
+
+      - name: upload to github release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |+
+          gh release upload $IMAGE_TAG -R ${{github.repository}} ${{github.workspace}}/upload/binaries/*

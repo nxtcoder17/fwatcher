@@ -21,10 +21,11 @@
 
             go_1_22
             upx
+            go-task
           ];
 
           shellHook = ''
-          # '';
+          '';
         };
       }
     );

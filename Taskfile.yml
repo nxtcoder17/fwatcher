@@ -1,8 +1,7 @@
 version: 3
 
 vars:
-  Name: "fwatcher"
-  Bin: "./bin/{{.Name}}"
+  name: "fwatcher"
 
 tasks:
   dev:
@@ -11,12 +10,25 @@ tasks:
 
   dev:build:
     cmds:
-      - go build -o {{.Bin}}
+      - go build -ldflags "-s -w -X main.Version={{.version}}" -o ./bin/{{.name}}
 
   build:
+    requires:
+      vars:
+        - version
+    vars:
+      upx: '{{.upx | default "false"}}'
+      binary: '{{.binary | default .name }}'
+    env:
+      GOOS: '{{ .GOOS }}'
+      GOARCH: '{{ .GOARCH }}'
     cmds:
-      - go build -o {{.Bin}}
-      - upx {{.Bin}}
+      - echo "building binary for ${GOOS:-$(go env GOOS)} (${GOARCH:-$(go env GOARCH)})"
+      - go build -ldflags "-s -w -X main.Version={{.version}}" -o ./bin/{{.binary}}
+      - |+
+        if [[ "{{.upx}}" = "true" ]]; then
+          upx ./bin/{{.binary}}
+        fi
 
   example:http-server:
     cmds:

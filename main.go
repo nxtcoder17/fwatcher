@@ -16,25 +16,22 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
+var Version string
+
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill)
 	defer stop()
 
 	app := &cli.App{
-		Name:  "fwatcher",
-		Usage: "watches files in directories and operates on their changes",
+		Name:           "fwatcher",
+		Usage:          "watches files in directories and operates on their changes",
+		Version:        Version,
+		DefaultCommand: "help",
 		Flags: []cli.Flag{
 			&cli.BoolFlag{
 				Name:     "debug",
 				Usage:    "toggles showing debug logs",
 				Required: false,
-				Value:    false,
-			},
-			&cli.BoolFlag{
-				Name:     "no-default-ignore",
-				Usage:    "disables ignoring from default ignore list",
-				Required: false,
-				Aliases:  []string{"I"},
 				Value:    false,
 			},
 			&cli.StringFlag{
@@ -88,6 +85,10 @@ func main() {
 
 			var execCmd string
 			var execArgs []string
+
+			if cctx.Args().Len() == 0 && cctx.String("command") == "" {
+				return fmt.Errorf("no command specified")
+			}
 
 			if cctx.String("command") != "" {
 				s := strings.SplitN(cctx.String("command"), " ", 2)
