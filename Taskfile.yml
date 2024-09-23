@@ -37,7 +37,8 @@ tasks:
         {{.Bin}} --debug  --ext '.go' --exec 'go run ./examples/http-server/main.go'
 
   install:
-    vars:
     cmds:
       - task: build
-      - ln -sf $PWD/{{.Bin}} $HOME/.local/bin/{{.Name}}
+        vars:
+          version: dev
+      - ln -sf $PWD/bin/{{.name}} $HOME/.local/bin/{{.name}}
