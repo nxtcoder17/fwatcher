@@ -12,9 +12,9 @@ import (
 )
 
 type Executor struct {
-	ctx    context.Context
-	done   chan os.Signal
-	logger *slog.Logger
+	done      chan os.Signal
+	logger    *slog.Logger
+	isRunning bool
 
 	newCmd func(context.Context) *exec.Cmd
 	mu     sync.Mutex
@@ -25,7 +25,7 @@ type ExecutorArgs struct {
 	Command func(context.Context) *exec.Cmd
 }
 
-func NewExecutor(ctx context.Context, args ExecutorArgs) *Executor {
+func NewExecutor(args ExecutorArgs) *Executor {
 	done := make(chan os.Signal, 1)
 	signal.Notify(done, syscall.SIGTERM)
 
@@ -36,19 +36,24 @@ func NewExecutor(ctx context.Context, args ExecutorArgs) *Executor {
 	return &Executor{
 		done:   done,
 		logger: args.Logger,
-		ctx:    ctx,
 		newCmd: args.Command,
 		mu:     sync.Mutex{},
 	}
 }
 
 func (ex *Executor) Exec() error {
+	ex.logger.Debug("[exec:pre] starting process")
 	ex.mu.Lock()
-	defer ex.mu.Unlock()
+	ex.isRunning = true
+
+	defer func() {
+		ex.isRunning = false
+		ex.mu.Unlock()
+	}()
 
 	ex.logger.Debug("[exec] starting process")
 
-	ctx, cf := context.WithCancel(ex.ctx)
+	ctx, cf := context.WithCancel(context.TODO())
 	defer cf()
 
 	cmd := ex.newCmd(ctx)
@@ -65,9 +70,15 @@ func (ex *Executor) Exec() error {
 		case <-ex.done:
 			ex.logger.Debug("executor terminated", "pid", cmd.Process.Pid)
 		}
+		for len(ex.done) > 0 {
+			<-ex.done
+		}
+
 		ex.logger.Debug("[exec] killing process", "pid", cmd.Process.Pid)
 		if err := syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL); err != nil {
-			ex.logger.Error("failed to kill process", "pid", cmd.Process.Pid, "err", err)
+			if err.Error() != "no such process" {
+				ex.logger.Error("failed to kill process", "pid", cmd.Process.Pid, "err", err)
+			}
 		}
 	}()
 
@@ -75,12 +86,14 @@ func (ex *Executor) Exec() error {
 		if strings.HasPrefix(err.Error(), "signal:") {
 			ex.logger.Debug("wait terminated, received", "signal", err.Error())
 		}
-		return err
+		ex.logger.Debug("while waiting, got", "err", err)
 	}
 
 	return nil
 }
 
 func (ex *Executor) Kill() {
-	ex.done <- os.Signal(syscall.SIGTERM)
+	if ex.isRunning {
+		ex.done <- os.Signal(syscall.SIGTERM)
+	}
 }

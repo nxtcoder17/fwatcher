@@ -113,7 +113,7 @@ func main() {
 				execArgs = cctx.Args().Tail()
 			}
 
-			ex := executor.NewExecutor(ctx, executor.ExecutorArgs{
+			ex := executor.NewExecutor(executor.ExecutorArgs{
 				Logger: logger,
 				Command: func(context.Context) *exec.Cmd {
 					cmd := exec.Command(execCmd, execArgs...)

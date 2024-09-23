@@ -92,7 +92,7 @@ func (f *fsnWatcher) WatchEvents(watcherFunc func(event Event, fp string) error)
 				eInfo.Counter += 1
 				f.eventMap[event.Name] = eInfo
 
-				if time.Since(eInfo.Time) < 1*time.Second {
+				if time.Since(eInfo.Time) < 100*time.Millisecond {
 					f.Logger.Debug("too many events under 1s, ignoring...", "counter", eInfo.Counter)
 					continue
 				}
