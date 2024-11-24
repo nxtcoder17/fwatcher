@@ -35,10 +35,14 @@ func main() {
 				Value:    false,
 			},
 			&cli.StringFlag{
-				Name:     "command",
-				Usage:    "specifies command to execute on file change",
-				Required: false,
-				Aliases:  []string{"c"},
+				Name:        "command",
+				Usage:       "specifies command to execute on file change",
+				HasBeenSet:  false,
+				Value:       "",
+				Destination: new(string),
+				Aliases:     []string{"c"},
+				EnvVars:     []string{},
+				TakesFile:   false,
 			},
 			&cli.PathFlag{
 				Name:     "dir",
@@ -52,13 +56,18 @@ func main() {
 					return cwd
 				}(),
 				Aliases: []string{"d"},
-				EnvVars: nil,
 			},
 			&cli.StringSliceFlag{
 				Name:     "ignore-suffixes",
 				Usage:    "files suffixes to ignore",
 				Required: false,
 				Aliases:  []string{"i"},
+			},
+			&cli.StringSliceFlag{
+				Name:     "only-watch-suffixes",
+				Usage:    "files suffixes to watch",
+				Required: false,
+				Aliases:  []string{"w"},
 			},
 			&cli.StringSliceFlag{
 				Name:     "exclude-dir",
@@ -104,13 +113,13 @@ func main() {
 					execArgs = strings.Split(s[1], " ")
 				}
 			} else {
-				logger.Debug("no command specified, using args")
 				if cctx.Args().Len() == 0 {
 					return fmt.Errorf("no command specified")
 				}
 
 				execCmd = cctx.Args().First()
 				execArgs = cctx.Args().Tail()
+				logger.Debug("no command specified, using", "command", execCmd, "args", execArgs)
 			}
 
 			ex := executor.NewExecutor(executor.ExecutorArgs{
@@ -126,6 +135,7 @@ func main() {
 
 			watcher, err := fswatcher.NewWatcher(fswatcher.WatcherArgs{
 				Logger:               logger,
+				OnlyWatchSuffixes:    cctx.StringSlice("only-watch-suffixes"),
 				IgnoreSuffixes:       cctx.StringSlice("ignore-suffixes"),
 				ExcludeDirs:          cctx.StringSlice("exclude-dir"),
 				UseDefaultIgnoreList: !cctx.Bool("no-global-ignore"),

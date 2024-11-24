@@ -32,9 +32,8 @@ tasks:
 
   example:http-server:
     cmds:
-      - task: dev:build
       - |+
-        {{.Bin}} --debug  --ext '.go' --exec 'go run ./examples/http-server/main.go'
+        go run ./examples/http-server/main.go
 
   install:
     cmds:

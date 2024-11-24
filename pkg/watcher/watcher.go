@@ -29,9 +29,10 @@ type fsnWatcher struct {
 
 	directoryCount int
 
-	Logger         *slog.Logger
-	IgnoreSuffixes []string
-	ExcludeDirs    map[string]struct{}
+	Logger            *slog.Logger
+	OnlyWatchSuffixes []string
+	IgnoreSuffixes    []string
+	ExcludeDirs       map[string]struct{}
 }
 
 type Event fsnotify.Event
@@ -65,7 +66,18 @@ func (f fsnWatcher) ignoreEvent(event fsnotify.Event) bool {
 			return true
 		}
 	}
-	return false
+
+	if len(f.OnlyWatchSuffixes) == 0 {
+		return false
+	}
+
+	for _, suffix := range f.OnlyWatchSuffixes {
+		if strings.HasSuffix(event.Name, suffix) {
+			return false
+		}
+	}
+
+	return true
 }
 
 func (f *fsnWatcher) WatchEvents(watcherFunc func(event Event, fp string) error) {
@@ -85,9 +97,14 @@ func (f *fsnWatcher) WatchEvents(watcherFunc func(event Event, fp string) error)
 					continue
 				}
 
+				fi, err := os.Stat(event.Name)
+				if err != nil {
+					return
+				}
+
 				eInfo, ok := f.eventMap[event.Name]
 				if !ok {
-					eInfo = eventInfo{Time: time.Time{}, FileInfo: nil, Counter: 0}
+					eInfo = eventInfo{Time: time.Now(), FileInfo: nil, Counter: 0}
 				}
 				eInfo.Counter += 1
 				f.eventMap[event.Name] = eInfo
@@ -169,6 +186,7 @@ func (f *fsnWatcher) Close() error {
 
 type WatcherArgs struct {
 	Logger               *slog.Logger
+	OnlyWatchSuffixes    []string
 	IgnoreSuffixes       []string
 	ExcludeDirs          []string
 	UseDefaultIgnoreList bool
@@ -193,5 +211,5 @@ func NewWatcher(args WatcherArgs) (Watcher, error) {
 		args.Logger.Error("failed to create watcher, got", "err", err)
 		return nil, err
 	}
-	return &fsnWatcher{watcher: watcher, Logger: args.Logger, ExcludeDirs: excludeDirs, IgnoreSuffixes: args.IgnoreSuffixes}, nil
+	return &fsnWatcher{watcher: watcher, Logger: args.Logger, ExcludeDirs: excludeDirs, IgnoreSuffixes: args.IgnoreSuffixes, OnlyWatchSuffixes: args.OnlyWatchSuffixes}, nil
 }
