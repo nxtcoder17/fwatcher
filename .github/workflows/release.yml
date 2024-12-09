@@ -5,6 +5,9 @@ on:
     tags:
       - 'v*'
 
+    branches:
+      - master
+
 jobs:
   build-binary:
     strategy:
@@ -16,17 +19,21 @@ jobs:
           - os: ubuntu-latest
             goos: linux
             platform: linux
+
           - os: macos-13
             goos: darwin
             platform: darwin
+
           - os: macos-14
             goos: darwin
             platform: darwin
         exclude:
           - os: macos-14
             arch: amd64
+
           - os: macos-13
             arch: arm64
+
     name: Building fwatcher-${{ matrix.platform }}-${{ matrix.arch }}
     runs-on: ${{ matrix.os }}
     steps:

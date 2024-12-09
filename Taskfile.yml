@@ -8,10 +8,6 @@ tasks:
     cmds:
       - go run .
 
-  dev:build:
-    cmds:
-      - go build -ldflags "-s -w -X main.Version={{.version}}" -o ./bin/{{.name}}
-
   build:
     requires:
       vars:
@@ -19,12 +15,16 @@ tasks:
     vars:
       upx: '{{.upx | default "false"}}'
       binary: '{{.binary | default .name }}'
+      date_str:
+        sh: "date '+%T %p (%Z) | %a %b %d, %Y'"
+      version_str: "[{{.version }}] built at {{.date_str}}"
     env:
       GOOS: '{{ .GOOS }}'
       GOARCH: '{{ .GOARCH }}'
     cmds:
       - echo "building binary for ${GOOS:-$(go env GOOS)} (${GOARCH:-$(go env GOARCH)})"
-      - go build -ldflags "-s -w -X main.Version={{.version}}" -o ./bin/{{.binary}}
+      - echo version str "{{.version_str}}"
+      - go build -ldflags '-s -w -X "main.Version={{.version_str}}"' -o ./bin/{{.binary}}
       - |+
         if [[ "{{.upx}}" = "true" ]]; then
           upx ./bin/{{.binary}}
