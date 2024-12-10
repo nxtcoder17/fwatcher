@@ -27,7 +27,7 @@ type ExecutorArgs struct {
 
 func NewExecutor(args ExecutorArgs) *Executor {
 	done := make(chan os.Signal, 1)
-	signal.Notify(done, syscall.SIGTERM)
+	signal.Notify(done, syscall.SIGINT, syscall.SIGTERM)
 
 	if args.Logger == nil {
 		args.Logger = slog.Default()
@@ -50,8 +50,6 @@ func (ex *Executor) Exec() error {
 		ex.isRunning = false
 		ex.mu.Unlock()
 	}()
-
-	ex.logger.Debug("[exec] starting process")
 
 	ctx, cf := context.WithCancel(context.TODO())
 	defer cf()
@@ -82,6 +80,7 @@ func (ex *Executor) Exec() error {
 		}
 	}()
 
+	ex.logger.Debug("[exec:post] process running")
 	if err := cmd.Wait(); err != nil {
 		if strings.HasPrefix(err.Error(), "signal:") {
 			ex.logger.Debug("wait terminated, received", "signal", err.Error())

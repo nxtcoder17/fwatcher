@@ -124,8 +124,8 @@ func main() {
 
 			ex := executor.NewExecutor(executor.ExecutorArgs{
 				Logger: logger,
-				Command: func(context.Context) *exec.Cmd {
-					cmd := exec.Command(execCmd, execArgs...)
+				Command: func(ctx context.Context) *exec.Cmd {
+					cmd := exec.CommandContext(ctx, execCmd, execArgs...)
 					cmd.Stdout = os.Stdout
 					cmd.Stderr = os.Stderr
 					cmd.Stdin = os.Stdin
