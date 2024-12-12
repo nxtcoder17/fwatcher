@@ -44,18 +44,11 @@ func main() {
 				EnvVars:     []string{},
 				TakesFile:   false,
 			},
-			&cli.PathFlag{
+			&cli.StringSliceFlag{
 				Name:     "dir",
 				Usage:    "directory to watch on",
 				Required: false,
-				Value: func() string {
-					cwd, err := os.Getwd()
-					if err != nil {
-						panic(err)
-					}
-					return cwd
-				}(),
-				Aliases: []string{"d"},
+				Aliases:  []string{"d"},
 			},
 			&cli.StringSliceFlag{
 				Name:     "ignore-suffixes",
@@ -64,7 +57,7 @@ func main() {
 				Aliases:  []string{"i"},
 			},
 			&cli.StringSliceFlag{
-				Name:     "only-watch-suffixes",
+				Name:     "only-suffixes",
 				Usage:    "files suffixes to watch",
 				Required: false,
 				Aliases:  []string{"w"},
@@ -73,7 +66,7 @@ func main() {
 				Name:     "exclude-dir",
 				Usage:    "directory to exclude from watching",
 				Required: false,
-				Aliases:  []string{"x", "e"},
+				Aliases:  []string{"x"},
 			},
 			&cli.BoolFlag{
 				Name:     "no-default-ignore",
@@ -134,17 +127,15 @@ func main() {
 			})
 
 			watcher, err := fswatcher.NewWatcher(fswatcher.WatcherArgs{
-				Logger:               logger,
-				OnlyWatchSuffixes:    cctx.StringSlice("only-watch-suffixes"),
+				Logger: logger,
+
+				WatchDirs:            cctx.StringSlice("dir"),
+				OnlySuffixes:         cctx.StringSlice("only-suffixes"),
 				IgnoreSuffixes:       cctx.StringSlice("ignore-suffixes"),
 				ExcludeDirs:          cctx.StringSlice("exclude-dir"),
 				UseDefaultIgnoreList: !cctx.Bool("no-global-ignore"),
 			})
 			if err != nil {
-				panic(err)
-			}
-
-			if err := watcher.RecursiveAdd(cctx.String("dir")); err != nil {
 				panic(err)
 			}
 
@@ -157,8 +148,9 @@ func main() {
 				os.Exit(0)
 			}()
 
+			pwd, _ := os.Getwd()
 			watcher.WatchEvents(func(event fswatcher.Event, fp string) error {
-				relPath, err := filepath.Rel(cctx.String("dir"), fp)
+				relPath, err := filepath.Rel(pwd, fp)
 				if err != nil {
 					return err
 				}

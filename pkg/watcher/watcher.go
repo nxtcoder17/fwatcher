@@ -24,15 +24,17 @@ type eventInfo struct {
 }
 
 type fsnWatcher struct {
-	watcher  *fsnotify.Watcher
-	eventMap map[string]eventInfo
+	watcher *fsnotify.Watcher
 
 	directoryCount int
 
-	Logger            *slog.Logger
-	OnlyWatchSuffixes []string
-	IgnoreSuffixes    []string
-	ExcludeDirs       map[string]struct{}
+	Logger         *slog.Logger
+	OnlySuffixes   []string
+	IgnoreSuffixes []string
+	ExcludeDirs    map[string]struct{}
+	watchingDirs   map[string]struct{}
+
+	cooldownDuration time.Duration
 }
 
 type Event fsnotify.Event
@@ -71,13 +73,13 @@ func (f fsnWatcher) ignoreEvent(event fsnotify.Event) (ignore bool, reason strin
 		}
 	}
 
-	if len(f.OnlyWatchSuffixes) == 0 {
+	if len(f.OnlySuffixes) == 0 {
 		return false, "event not in ignore list, and only-watch list is also empty"
 	}
 
 	matched := false
-	for _, suffix := range f.OnlyWatchSuffixes {
-		f.Logger.Debug("[only-watch-suffix] suffix: (%s), event.name: %s", suffix, event.Name)
+	for _, suffix := range f.OnlySuffixes {
+		f.Logger.Debug(fmt.Sprintf("[only-suffix] suffix: (%s), event.name: %s", suffix, event.Name))
 		if strings.HasSuffix(event.Name, suffix) {
 			matched = true
 			break
@@ -123,8 +125,8 @@ func (f *fsnWatcher) WatchEvents(watcherFunc func(event Event, fp string) error)
 				// eInfo.Counter += 1
 				// f.eventMap[event.Name] = eInfo
 
-				if time.Since(lastProcessingTime) < 100*time.Millisecond {
-					// f.Logger.Debug("too many events under 100ms, ignoring...", "counter", eInfo.Counter)
+				if time.Since(lastProcessingTime) < f.cooldownDuration {
+					f.Logger.Debug(fmt.Sprintf("too many events under %s, ignoring...", f.cooldownDuration.String()), "event.name", event.Name)
 					continue
 				}
 
@@ -149,6 +151,12 @@ func (f *fsnWatcher) WatchEvents(watcherFunc func(event Event, fp string) error)
 
 func (f *fsnWatcher) RecursiveAdd(dirs ...string) error {
 	for _, dir := range dirs {
+		if _, ok := f.watchingDirs[dir]; ok {
+			continue
+		}
+
+		f.watchingDirs[dir] = struct{}{}
+
 		fi, err := os.Lstat(dir)
 		if err != nil {
 			return err
@@ -199,11 +207,16 @@ func (f *fsnWatcher) Close() error {
 }
 
 type WatcherArgs struct {
-	Logger               *slog.Logger
-	OnlyWatchSuffixes    []string
-	IgnoreSuffixes       []string
-	ExcludeDirs          []string
+	Logger *slog.Logger
+
+	WatchDirs      []string
+	OnlySuffixes   []string
+	IgnoreSuffixes []string
+	ExcludeDirs    []string
+
 	UseDefaultIgnoreList bool
+
+	CooldownDuration *time.Duration
 }
 
 func NewWatcher(args WatcherArgs) (Watcher, error) {
@@ -213,6 +226,12 @@ func NewWatcher(args WatcherArgs) (Watcher, error) {
 
 	if args.UseDefaultIgnoreList {
 		args.ExcludeDirs = append(args.ExcludeDirs, globalExcludeDirs...)
+	}
+
+	cooldown := 500 * time.Millisecond
+
+	if args.CooldownDuration != nil {
+		cooldown = *args.CooldownDuration
 	}
 
 	excludeDirs := map[string]struct{}{}
@@ -225,11 +244,25 @@ func NewWatcher(args WatcherArgs) (Watcher, error) {
 		args.Logger.Error("failed to create watcher, got", "err", err)
 		return nil, err
 	}
-	return &fsnWatcher{
-		watcher:           watcher,
-		Logger:            args.Logger,
-		ExcludeDirs:       excludeDirs,
-		IgnoreSuffixes:    args.IgnoreSuffixes,
-		OnlyWatchSuffixes: args.OnlyWatchSuffixes,
-	}, nil
+
+	if args.WatchDirs == nil {
+		dir, _ := os.Getwd()
+		args.WatchDirs = append(args.WatchDirs, dir)
+	}
+
+	fsw := &fsnWatcher{
+		watcher:          watcher,
+		Logger:           args.Logger,
+		ExcludeDirs:      excludeDirs,
+		IgnoreSuffixes:   args.IgnoreSuffixes,
+		OnlySuffixes:     args.OnlySuffixes,
+		cooldownDuration: cooldown,
+		watchingDirs:     make(map[string]struct{}),
+	}
+
+	if err := fsw.RecursiveAdd(args.WatchDirs...); err != nil {
+		return nil, err
+	}
+
+	return fsw, nil
 }
