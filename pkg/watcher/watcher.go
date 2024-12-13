@@ -1,6 +1,7 @@
 package watcher
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"os"
@@ -17,14 +18,15 @@ type Watcher interface {
 	WatchEvents(func(event Event, fp string) error)
 }
 
-type eventInfo struct {
-	Time     time.Time
-	FileInfo os.FileInfo
-	Counter  int
-}
+// type eventInfo struct {
+// 	Time     time.Time
+// 	FileInfo os.FileInfo
+// 	Counter  int
+// }
 
 type fsnWatcher struct {
-	watcher *fsnotify.Watcher
+	watcher   *fsnotify.Watcher
+	lfContext context.Context
 
 	directoryCount int
 
@@ -93,7 +95,6 @@ func (f fsnWatcher) ignoreEvent(event fsnotify.Event) (ignore bool, reason strin
 }
 
 func (f *fsnWatcher) WatchEvents(watcherFunc func(event Event, fp string) error) {
-	// f.eventMap = map[string]eventInfo{}
 	lastProcessingTime := time.Now()
 	for {
 		select {
@@ -113,30 +114,15 @@ func (f *fsnWatcher) WatchEvents(watcherFunc func(event Event, fp string) error)
 
 				f.Logger.Debug("PROCESSING", "event.name", event.Name, "event.op", event.Op.String())
 
-				// _, err := os.Stat(event.Name)
-				// if err != nil {
-				// 	return
-				// }
-
-				// eInfo, ok := f.eventMap[event.Name]
-				// if !ok {
-				// 	eInfo = eventInfo{Time: time.Now(), FileInfo: nil, Counter: 0}
-				// }
-				// eInfo.Counter += 1
-				// f.eventMap[event.Name] = eInfo
-
 				if time.Since(lastProcessingTime) < f.cooldownDuration {
 					f.Logger.Debug(fmt.Sprintf("too many events under %s, ignoring...", f.cooldownDuration.String()), "event.name", event.Name)
 					continue
 				}
-
-				if err := watcherFunc(Event(event), event.Name); err != nil {
+				abs, _ := filepath.Abs(event.Name)
+				if err := watcherFunc(Event(event), abs); err != nil {
 					f.Logger.Error("while processing event, got", "err", err)
 					return
 				}
-				// eInfo.Time = time.Now()
-				// eInfo.Counter = 0
-				// f.eventMap[event.Name] = eInfo
 
 				f.Logger.Debug("watch loop completed", "took", fmt.Sprintf("%dms", time.Since(t).Milliseconds()))
 			}
@@ -145,6 +131,13 @@ func (f *fsnWatcher) WatchEvents(watcherFunc func(event Event, fp string) error)
 				return
 			}
 			f.Logger.Error("watcher error", "err", err)
+		case <-f.lfContext.Done():
+			//  when fwatcher is closing, cleaning up the watcher events and closing, otherwise rase condition might lead to staring command again
+			for item := range f.watcher.Events {
+				_ = item
+			}
+			f.Logger.Debug("fwatcher is closing ...")
+			return
 		}
 	}
 }
@@ -219,7 +212,7 @@ type WatcherArgs struct {
 	CooldownDuration *time.Duration
 }
 
-func NewWatcher(args WatcherArgs) (Watcher, error) {
+func NewWatcher(ctx context.Context, args WatcherArgs) (Watcher, error) {
 	if args.Logger == nil {
 		args.Logger = slog.Default()
 	}
@@ -252,6 +245,7 @@ func NewWatcher(args WatcherArgs) (Watcher, error) {
 
 	fsw := &fsnWatcher{
 		watcher:          watcher,
+		lfContext:        ctx,
 		Logger:           args.Logger,
 		ExcludeDirs:      excludeDirs,
 		IgnoreSuffixes:   args.IgnoreSuffixes,

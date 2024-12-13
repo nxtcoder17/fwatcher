@@ -8,6 +8,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/nxtcoder17/fwatcher/pkg/executor"
@@ -19,7 +20,7 @@ import (
 var Version string
 
 func main() {
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill)
+	ctx, stop := signal.NotifyContext(context.TODO(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
 	app := &cli.App{
@@ -32,7 +33,13 @@ func main() {
 				Name:     "debug",
 				Usage:    "toggles showing debug logs",
 				Required: false,
-				Value:    false,
+				// Value:    false,
+			},
+			&cli.BoolFlag{
+				Name:     "interactive",
+				Usage:    "runs fwatcher with interactive commands",
+				Required: false,
+				// Value:    false,
 			},
 			&cli.StringFlag{
 				Name:        "command",
@@ -116,7 +123,8 @@ func main() {
 			}
 
 			ex := executor.NewExecutor(executor.ExecutorArgs{
-				Logger: logger,
+				Logger:        logger,
+				IsInteractive: cctx.Bool("interactive"),
 				Command: func(ctx context.Context) *exec.Cmd {
 					cmd := exec.CommandContext(ctx, execCmd, execArgs...)
 					cmd.Stdout = os.Stdout
@@ -126,7 +134,7 @@ func main() {
 				},
 			})
 
-			watcher, err := fswatcher.NewWatcher(fswatcher.WatcherArgs{
+			watcher, err := fswatcher.NewWatcher(ctx, fswatcher.WatcherArgs{
 				Logger: logger,
 
 				WatchDirs:            cctx.StringSlice("dir"),
@@ -143,13 +151,18 @@ func main() {
 
 			go func() {
 				<-ctx.Done()
-				logger.Debug("fwatcher is closing ...")
+				logger.Debug("fwatcher is closing  2...")
+				watcher.Close()
 				<-time.After(200 * time.Millisecond)
 				os.Exit(0)
 			}()
 
 			pwd, _ := os.Getwd()
 			watcher.WatchEvents(func(event fswatcher.Event, fp string) error {
+				if ctx.Err() != nil {
+					logger.Debug("fwatcher is closed ...")
+					return nil
+				}
 				relPath, err := filepath.Rel(pwd, fp)
 				if err != nil {
 					return err
