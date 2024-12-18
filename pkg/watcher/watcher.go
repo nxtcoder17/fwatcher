@@ -229,6 +229,7 @@ func NewWatcher(ctx context.Context, args WatcherArgs) (Watcher, error) {
 
 	excludeDirs := map[string]struct{}{}
 	for _, dir := range args.ExcludeDirs {
+		args.Logger.Debug("EXCLUDED from watching", "dir", dir)
 		excludeDirs[dir] = struct{}{}
 	}
 

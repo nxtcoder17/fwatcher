@@ -151,7 +151,6 @@ func main() {
 
 			go func() {
 				<-ctx.Done()
-				logger.Debug("fwatcher is closing  2...")
 				watcher.Close()
 				<-time.After(200 * time.Millisecond)
 				os.Exit(0)
@@ -169,9 +168,16 @@ func main() {
 				}
 				logger.Info(fmt.Sprintf("[RELOADING] due changes in %s", relPath))
 				ex.Kill()
-				<-time.After(100 * time.Millisecond)
-				go ex.Exec()
-				return nil
+
+				select {
+				case <-time.After(100 * time.Millisecond):
+					go ex.Exec()
+					return nil
+				case <-ctx.Done():
+					logger.Info("close signal received")
+					watcher.Close()
+					return nil
+				}
 			})
 
 			return nil
