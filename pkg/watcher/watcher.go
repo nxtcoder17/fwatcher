@@ -68,6 +68,12 @@ func (f fsnWatcher) ignoreEvent(event fsnotify.Event) (ignore bool, reason strin
 		return true, "event is from a special file from vim/neovim which ends in ~"
 	}
 
+	for k := range f.ExcludeDirs {
+		if strings.HasPrefix(event.Name, k) {
+			return true, "event is generating from an excluded path"
+		}
+	}
+
 	for _, suffix := range f.IgnoreSuffixes {
 		if strings.HasSuffix(event.Name, suffix) {
 			f.Logger.Debug("file is ignored", "file", event.Name)
@@ -152,7 +158,9 @@ func (f *fsnWatcher) RecursiveAdd(dirs ...string) error {
 
 		fi, err := os.Lstat(dir)
 		if err != nil {
-			return err
+			continue
+			// INFO: instead of returning and error, seems like ignore is a better choice
+			// return err
 		}
 
 		if !fi.IsDir() {
