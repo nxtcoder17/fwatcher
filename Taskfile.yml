@@ -30,6 +30,10 @@ tasks:
           upx ./bin/{{.binary}}
         fi
 
+  build:dev:
+    cmds:
+      - go build -o ./bin/fwatcher-dev ./cmd
+
   example:http-server:
     cmds:
       - |+
