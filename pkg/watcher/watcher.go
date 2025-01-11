@@ -146,7 +146,6 @@ func (f *fsnWatcher) Watch(ctx context.Context) {
 					f.Logger.Debug(fmt.Sprintf("too many events under %s, ignoring...", f.cooldownDuration.String()), "event.name", event.Name)
 					continue
 				}
-				// abs, _ := filepath.Abs(event.Name)
 
 				f.eventsCh <- Event(event)
 

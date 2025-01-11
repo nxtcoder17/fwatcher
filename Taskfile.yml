@@ -6,7 +6,7 @@ vars:
 tasks:
   dev:
     cmds:
-      - go run .
+      - go run ./cmd
 
   build:
     requires:
@@ -24,7 +24,7 @@ tasks:
     cmds:
       - echo "building binary for ${GOOS:-$(go env GOOS)} (${GOARCH:-$(go env GOARCH)})"
       - echo version str "{{.version_str}}"
-      - go build -ldflags '-s -w -X "main.Version={{.version_str}}"' -o ./bin/{{.binary}}
+      - go build -ldflags '-s -w -X "main.Version={{.version_str}}"' -o ./bin/{{.binary}} ./cmd
       - |+
         if [[ "{{.upx}}" = "true" ]]; then
           upx ./bin/{{.binary}}

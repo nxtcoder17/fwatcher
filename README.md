@@ -27,27 +27,22 @@ curl -L0 https://github.com/nxtcoder17/fwatcher/releases/latest/download/fwatche
 
 ```console
 NAME:
-   fwatcher - watches files in directories and operates on their changes
+   fwatcher-dev - simple tool to run commands on filesystem change events
 
 USAGE:
-   fwatcher [global options] command [command options] [arguments...]
-
-VERSION:
-   dev
-
-COMMANDS:
-   help, h  Shows a list of commands or help for one command
+   fwatcher-dev [global options] <Command To Run>
 
 GLOBAL OPTIONS:
-   --debug                                                                              toggles showing debug logs (default: false)
-   --command value, -c value                                                            specifies command to execute on file change
-   --dir value, -d value                                                                directory to watch on (default: "/var/home/nxtcoder17/workspace/nxtcoder17/fwatcher")
-   --ignore-suffixes value, -i value [ --ignore-suffixes value, -i value ]              files suffixes to ignore
-   --only-watch-suffixes value, -w value [ --only-watch-suffixes value, -w value ]      files suffixes to watch
-   --exclude-dir value, -x value, -e value [ --exclude-dir value, -x value, -e value ]  directory to exclude from watching
-   --no-default-ignore, -I                                                              disables ignoring from default ignore list (default: false)
-   --help, -h                                                                           show help
-   --version, -v                                                                        print the version
+   --debug                                                          (default: false)
+   --command value, -c value                                        [command to run] (default: "echo hi")
+   --watch value, -w value [ --watch value, -w value ]              [dir] (to watch) | -[dir] (to ignore) (default: ".")
+   --ext value, -e value [ --ext value, -e value ]                  [ext] (to watch) | -[ext] (to ignore)
+   --ignore-list value, -I value [ --ignore-list value, -I value ]  disables ignoring from default ignore list (default: ".git", ".svn", ".hg", ".idea", ".vscode", ".direnv", "node_modules", ".DS_Store", ".log")
+   --cooldown value                                                 cooldown duration (default: "100ms")
+   --interactive                                                    interactive mode, with stdin (default: false)
+   --sse                                                            run watcher in sse mode (default: false)
+   --sse-addr value                                                 run watcher in sse mode (default: ":12345")
+   --help, -h                                                       show help
 ```
 
 [See fwatcher in action](fwatcher_recording)
