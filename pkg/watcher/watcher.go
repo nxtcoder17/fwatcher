@@ -15,18 +15,12 @@ import (
 type Watcher interface {
 	Close() error
 	RecursiveAdd(dir ...string) error
-	WatchEvents(func(event Event, fp string) error)
+	Watch(ctx context.Context)
+	GetEvents() chan Event
 }
 
-// type eventInfo struct {
-// 	Time     time.Time
-// 	FileInfo os.FileInfo
-// 	Counter  int
-// }
-
 type fsnWatcher struct {
-	watcher   *fsnotify.Watcher
-	lfContext context.Context
+	watcher *fsnotify.Watcher
 
 	directoryCount int
 
@@ -37,6 +31,13 @@ type fsnWatcher struct {
 	watchingDirs   map[string]struct{}
 
 	cooldownDuration time.Duration
+
+	eventsCh chan Event
+}
+
+// GetEvents implements Watcher.
+func (f *fsnWatcher) GetEvents() chan Event {
+	return f.eventsCh
 }
 
 type Event fsnotify.Event
@@ -50,8 +51,10 @@ var (
 )
 
 func (f fsnWatcher) ignoreEvent(event fsnotify.Event) (ignore bool, reason string) {
-	if event.Op == fsnotify.Chmod {
-		return true, "event is of type CHMOD"
+	// INFO: any file change emits a chain of events, but
+	// we can always expect a Write event out of that event chain
+	if event.Op != fsnotify.Write {
+		return true, fmt.Sprintf("event (%s) is not of type WRITE", event.Op)
 	}
 
 	// Vim/Neovim creates this temporary file to see whether it can write
@@ -69,7 +72,7 @@ func (f fsnWatcher) ignoreEvent(event fsnotify.Event) (ignore bool, reason strin
 	}
 
 	for k := range f.ExcludeDirs {
-		if strings.HasPrefix(event.Name, k) {
+		if strings.Contains(event.Name, k) {
 			return true, "event is generating from an excluded path"
 		}
 	}
@@ -100,14 +103,33 @@ func (f fsnWatcher) ignoreEvent(event fsnotify.Event) (ignore bool, reason strin
 	return true, "event ignored as suffix is not present in only-watch-suffixes"
 }
 
-func (f *fsnWatcher) WatchEvents(watcherFunc func(event Event, fp string) error) {
+func (f *fsnWatcher) Watch(ctx context.Context) {
 	lastProcessingTime := time.Now()
+
 	for {
 		select {
 		case event, ok := <-f.watcher.Events:
 			{
 				if !ok {
 					return
+				}
+
+				if event.Op == fsnotify.Create {
+					fi, _ := os.Stat(event.Name)
+					if fi != nil && fi.IsDir() {
+						skip := false
+
+						for k := range f.ExcludeDirs {
+							if strings.Contains(event.Name, k) {
+								skip = true
+								break
+							}
+						}
+
+						if !skip {
+							f.RecursiveAdd(event.Name)
+						}
+					}
 				}
 
 				t := time.Now()
@@ -124,25 +146,17 @@ func (f *fsnWatcher) WatchEvents(watcherFunc func(event Event, fp string) error)
 					f.Logger.Debug(fmt.Sprintf("too many events under %s, ignoring...", f.cooldownDuration.String()), "event.name", event.Name)
 					continue
 				}
-				abs, _ := filepath.Abs(event.Name)
-				if err := watcherFunc(Event(event), abs); err != nil {
-					f.Logger.Error("while processing event, got", "err", err)
-					return
-				}
+				// abs, _ := filepath.Abs(event.Name)
+
+				f.eventsCh <- Event(event)
 
 				f.Logger.Debug("watch loop completed", "took", fmt.Sprintf("%dms", time.Since(t).Milliseconds()))
 			}
-		case err, ok := <-f.watcher.Errors:
-			if !ok {
-				return
-			}
-			f.Logger.Error("watcher error", "err", err)
-		case <-f.lfContext.Done():
-			//  when fwatcher is closing, cleaning up the watcher events and closing, otherwise rase condition might lead to staring command again
-			for item := range f.watcher.Events {
-				_ = item
-			}
-			f.Logger.Debug("fwatcher is closing ...")
+
+		case <-ctx.Done():
+			f.Logger.Debug("watcher is closing", "reason", "context closed")
+			close(f.eventsCh)
+			f.watcher.Close()
 			return
 		}
 	}
@@ -210,14 +224,15 @@ func (f *fsnWatcher) Close() error {
 type WatcherArgs struct {
 	Logger *slog.Logger
 
-	WatchDirs      []string
-	OnlySuffixes   []string
-	IgnoreSuffixes []string
-	ExcludeDirs    []string
+	WatchDirs        []string
+	WatchExtensions  []string
+	IgnoreExtensions []string
+	IgnoreDirs       []string
 
-	UseDefaultIgnoreList bool
+	IgnoreList []string
 
 	CooldownDuration *time.Duration
+	Interactive      bool
 }
 
 func NewWatcher(ctx context.Context, args WatcherArgs) (Watcher, error) {
@@ -225,9 +240,7 @@ func NewWatcher(ctx context.Context, args WatcherArgs) (Watcher, error) {
 		args.Logger = slog.Default()
 	}
 
-	if args.UseDefaultIgnoreList {
-		args.ExcludeDirs = append(args.ExcludeDirs, globalExcludeDirs...)
-	}
+	args.IgnoreDirs = append(args.IgnoreDirs, args.IgnoreList...)
 
 	cooldown := 500 * time.Millisecond
 
@@ -236,7 +249,7 @@ func NewWatcher(ctx context.Context, args WatcherArgs) (Watcher, error) {
 	}
 
 	excludeDirs := map[string]struct{}{}
-	for _, dir := range args.ExcludeDirs {
+	for _, dir := range args.IgnoreDirs {
 		args.Logger.Debug("EXCLUDED from watching", "dir", dir)
 		excludeDirs[dir] = struct{}{}
 	}
@@ -254,13 +267,14 @@ func NewWatcher(ctx context.Context, args WatcherArgs) (Watcher, error) {
 
 	fsw := &fsnWatcher{
 		watcher:          watcher,
-		lfContext:        ctx,
 		Logger:           args.Logger,
 		ExcludeDirs:      excludeDirs,
-		IgnoreSuffixes:   args.IgnoreSuffixes,
-		OnlySuffixes:     args.OnlySuffixes,
+		IgnoreSuffixes:   args.IgnoreExtensions,
+		OnlySuffixes:     args.WatchExtensions,
 		cooldownDuration: cooldown,
 		watchingDirs:     make(map[string]struct{}),
+
+		eventsCh: make(chan Event),
 	}
 
 	if err := fsw.RecursiveAdd(args.WatchDirs...); err != nil {
