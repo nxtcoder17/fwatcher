@@ -24,7 +24,7 @@ func (s *SSEExectuor) OnWatchEvent(event Event) error {
 	case s.ch <- event:
 		return nil
 	case <-time.After(20 * time.Millisecond):
-		slog.Warn("event is being ignored")
+		slog.Warn("SSE event is being ignored")
 		return nil
 	}
 }

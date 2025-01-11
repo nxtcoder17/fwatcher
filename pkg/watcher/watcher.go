@@ -19,12 +19,6 @@ type Watcher interface {
 	GetEvents() chan Event
 }
 
-// type eventInfo struct {
-// 	Time     time.Time
-// 	FileInfo os.FileInfo
-// 	Counter  int
-// }
-
 type fsnWatcher struct {
 	watcher *fsnotify.Watcher
 
@@ -78,7 +72,7 @@ func (f fsnWatcher) ignoreEvent(event fsnotify.Event) (ignore bool, reason strin
 	}
 
 	for k := range f.ExcludeDirs {
-		if strings.HasPrefix(event.Name, k) {
+		if strings.Contains(event.Name, k) {
 			return true, "event is generating from an excluded path"
 		}
 	}
@@ -118,6 +112,24 @@ func (f *fsnWatcher) Watch(ctx context.Context) {
 			{
 				if !ok {
 					return
+				}
+
+				if event.Op == fsnotify.Create {
+					fi, _ := os.Stat(event.Name)
+					if fi != nil && fi.IsDir() {
+						skip := false
+
+						for k := range f.ExcludeDirs {
+							if strings.Contains(event.Name, k) {
+								skip = true
+								break
+							}
+						}
+
+						if !skip {
+							f.RecursiveAdd(event.Name)
+						}
+					}
 				}
 
 				t := time.Now()
