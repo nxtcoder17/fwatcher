@@ -2,6 +2,7 @@ package executor
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -16,6 +17,8 @@ any client can connect to this event at /event
 type SSEExectuor struct {
 	ch     chan Event
 	server *http.Server
+
+	logger *slog.Logger
 }
 
 // OnWatchEvent implements Executor.
@@ -31,7 +34,14 @@ func (s *SSEExectuor) OnWatchEvent(event Event) error {
 
 // Start implements Executor.
 func (s *SSEExectuor) Start() error {
-	return s.server.ListenAndServe()
+	s.logger.Info("Server Side Event notifier server started", "addr", s.server.Addr)
+	if err := s.server.ListenAndServe(); err != nil {
+		if errors.Is(err, http.ErrServerClosed) {
+			return nil
+		}
+		return err
+	}
+	return nil
 }
 
 // Stop implements Executor.
@@ -43,6 +53,8 @@ var _ Executor = (*SSEExectuor)(nil)
 
 type SSEExecutorArgs struct {
 	Addr string
+
+	Logger *slog.Logger
 }
 
 func NewSSEExecutor(args SSEExecutorArgs) *SSEExectuor {
@@ -68,10 +80,15 @@ func NewSSEExecutor(args SSEExecutorArgs) *SSEExectuor {
 		}
 	})
 
+	logger := args.Logger
+	if logger == nil {
+		logger = slog.Default()
+	}
+
 	server := http.Server{
 		Addr:    args.Addr,
 		Handler: mux,
 	}
 
-	return &SSEExectuor{ch: ch, server: &server}
+	return &SSEExectuor{ch: ch, server: &server, logger: logger}
 }

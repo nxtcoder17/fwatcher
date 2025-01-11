@@ -12,14 +12,7 @@ import (
 	"github.com/fsnotify/fsnotify"
 )
 
-type Watcher interface {
-	Close() error
-	RecursiveAdd(dir ...string) error
-	Watch(ctx context.Context)
-	GetEvents() chan Event
-}
-
-type fsnWatcher struct {
+type Watcher struct {
 	watcher *fsnotify.Watcher
 
 	directoryCount int
@@ -36,7 +29,7 @@ type fsnWatcher struct {
 }
 
 // GetEvents implements Watcher.
-func (f *fsnWatcher) GetEvents() chan Event {
+func (f *Watcher) GetEvents() chan Event {
 	return f.eventsCh
 }
 
@@ -50,7 +43,7 @@ var (
 	Chmod  = fsnotify.Chmod
 )
 
-func (f fsnWatcher) ignoreEvent(event fsnotify.Event) (ignore bool, reason string) {
+func (f Watcher) ignoreEvent(event fsnotify.Event) (ignore bool, reason string) {
 	// INFO: any file change emits a chain of events, but
 	// we can always expect a Write event out of that event chain
 	if event.Op != fsnotify.Write {
@@ -103,7 +96,7 @@ func (f fsnWatcher) ignoreEvent(event fsnotify.Event) (ignore bool, reason strin
 	return true, "event ignored as suffix is not present in only-watch-suffixes"
 }
 
-func (f *fsnWatcher) Watch(ctx context.Context) {
+func (f *Watcher) Watch(ctx context.Context) {
 	lastProcessingTime := time.Now()
 
 	for {
@@ -161,7 +154,7 @@ func (f *fsnWatcher) Watch(ctx context.Context) {
 	}
 }
 
-func (f *fsnWatcher) RecursiveAdd(dirs ...string) error {
+func (f *Watcher) RecursiveAdd(dirs ...string) error {
 	for _, dir := range dirs {
 		if _, ok := f.watchingDirs[dir]; ok {
 			continue
@@ -206,7 +199,7 @@ func (f *fsnWatcher) RecursiveAdd(dirs ...string) error {
 	return nil
 }
 
-func (f *fsnWatcher) addToWatchList(dir string) error {
+func (f *Watcher) addToWatchList(dir string) error {
 	if err := f.watcher.Add(dir); err != nil {
 		f.Logger.Error("failed to add directory", "dir", dir, "err", err)
 		return err
@@ -216,7 +209,7 @@ func (f *fsnWatcher) addToWatchList(dir string) error {
 	return nil
 }
 
-func (f *fsnWatcher) Close() error {
+func (f *Watcher) Close() error {
 	return f.watcher.Close()
 }
 
@@ -234,7 +227,17 @@ type WatcherArgs struct {
 	Interactive      bool
 }
 
-func NewWatcher(ctx context.Context, args WatcherArgs) (Watcher, error) {
+// DefaultIgnoreList is list of directories that are mostly ignored
+var DefaultIgnoreList = []string{
+	".git", ".svn", ".hg", // version control
+	".idea", ".vscode", // IDEs
+	".direnv",      // direnv nix
+	"node_modules", // node
+	".DS_Store",    // macOS
+	".log",         // logs
+}
+
+func NewWatcher(ctx context.Context, args WatcherArgs) (*Watcher, error) {
 	if args.Logger == nil {
 		args.Logger = slog.Default()
 	}
@@ -264,7 +267,7 @@ func NewWatcher(ctx context.Context, args WatcherArgs) (Watcher, error) {
 		args.WatchDirs = append(args.WatchDirs, dir)
 	}
 
-	fsw := &fsnWatcher{
+	fsw := &Watcher{
 		watcher:          watcher,
 		Logger:           args.Logger,
 		ExcludeDirs:      excludeDirs,
