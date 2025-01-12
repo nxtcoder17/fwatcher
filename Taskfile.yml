@@ -32,7 +32,7 @@ tasks:
 
   build:dev:
     cmds:
-      - go build -o ./bin/fwatcher-dev ./cmd
+      - go build -o ./bin/fwatcher ./cmd
 
   example:http-server:
     cmds:

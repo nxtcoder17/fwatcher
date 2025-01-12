@@ -12,7 +12,7 @@ import (
 type CmdExecutor struct {
 	logger    *slog.Logger
 	parentCtx context.Context
-	newCmd    func(context.Context) *exec.Cmd
+	newCmds   func(context.Context) []*exec.Cmd
 
 	interactive bool
 
@@ -22,7 +22,7 @@ type CmdExecutor struct {
 
 type CmdExecutorArgs struct {
 	Logger      *slog.Logger
-	Command     func(context.Context) *exec.Cmd
+	Commands    func(context.Context) []*exec.Cmd
 	Interactive bool
 }
 
@@ -34,7 +34,7 @@ func NewCmdExecutor(ctx context.Context, args CmdExecutorArgs) *CmdExecutor {
 	return &CmdExecutor{
 		parentCtx:   ctx,
 		logger:      args.Logger.With("component", "cmd-executor"),
-		newCmd:      args.Command,
+		newCmds:     args.Commands,
 		mu:          sync.Mutex{},
 		interactive: args.Interactive,
 	}
@@ -54,54 +54,57 @@ func (ex *CmdExecutor) Start() error {
 	ex.abort = cf
 	ex.mu.Unlock()
 
-	cmd := ex.newCmd(ctx)
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	if ex.interactive {
-		cmd.Stdin = os.Stdin
-		cmd.SysProcAttr.Foreground = true
-	}
+	cmds := ex.newCmds(ctx)
 
-	if err := cmd.Start(); err != nil {
-		return err
-	}
+	for _, cmd := range cmds {
+		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+		if ex.interactive {
+			cmd.Stdin = os.Stdin
+			cmd.SysProcAttr.Foreground = true
+		}
 
-	done := make(chan error)
-	go func() {
-		done <- cmd.Wait()
-	}()
-
-	select {
-	case <-ctx.Done():
-		ex.logger.Debug("process context done")
-	case err := <-done:
-		ex.logger.Debug("process wait completed, got", "err", err)
-	}
-
-	ex.logger.Debug("process", "pid", cmd.Process.Pid)
-
-	if ex.interactive {
-		// Send SIGTERM to the interactive process, as user will see it on his screen
-		proc, err := os.FindProcess(os.Getpid())
-		if err != nil {
+		if err := cmd.Start(); err != nil {
 			return err
 		}
 
-		err = proc.Signal(syscall.SIGTERM)
-		if err != nil {
-			if err != syscall.ESRCH {
-				ex.logger.Error("failed to kill, got", "err", err)
+		done := make(chan error)
+		go func() {
+			done <- cmd.Wait()
+		}()
+
+		select {
+		case <-ctx.Done():
+			ex.logger.Debug("process context done")
+		case err := <-done:
+			ex.logger.Debug("process wait completed, got", "err", err)
+		}
+
+		ex.logger.Debug("process", "pid", cmd.Process.Pid)
+
+		if ex.interactive {
+			// Send SIGTERM to the interactive process, as user will see it on his screen
+			proc, err := os.FindProcess(os.Getpid())
+			if err != nil {
 				return err
 			}
+
+			err = proc.Signal(syscall.SIGTERM)
+			if err != nil {
+				if err != syscall.ESRCH {
+					ex.logger.Error("failed to kill, got", "err", err)
+					return err
+				}
+				return err
+			}
+		}
+
+		if err := syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL); err != nil {
+			if err == syscall.ESRCH {
+				return nil
+			}
+			ex.logger.Error("failed to kill, got", "err", err)
 			return err
 		}
-	}
-
-	if err := syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL); err != nil {
-		if err == syscall.ESRCH {
-			return nil
-		}
-		ex.logger.Error("failed to kill, got", "err", err)
-		return err
 	}
 
 	return nil

@@ -24,7 +24,7 @@ func main() {
 	cmd := &cli.Command{
 		Name:                   ProgramName,
 		UseShortOptionHandling: true,
-		Usage:                  "simple tool to run commands on filesystem change events",
+		Usage:                  "a simple tool to run things on filesystem change events",
 		ArgsUsage:              "<Command To Run>",
 		Version:                Version,
 		Flags: []cli.Flag{
@@ -77,17 +77,10 @@ func main() {
 				Usage: "interactive mode, with stdin",
 			},
 
-			&cli.BoolFlag{
-				Name:  "sse",
-				Usage: "run watcher in sse mode",
-			},
-
 			&cli.StringFlag{
 				Name:        "sse-addr",
 				HideDefault: false,
-				Usage:       "run watcher in sse mode",
-				Sources:     cli.ValueSourceChain{},
-				Value:       ":12345",
+				Usage:       "run watcher with Server Side Events (SSE) enabled",
 			},
 		},
 		Action: func(ctx context.Context, c *cli.Command) error {
@@ -148,8 +141,7 @@ func main() {
 
 			var executors []executor.Executor
 
-			if c.Bool("sse") {
-				sseAddr := c.String("sse-addr")
+			if sseAddr := c.String("sse-addr"); sseAddr != "" {
 				executors = append(executors, executor.NewSSEExecutor(executor.SSEExecutorArgs{Addr: sseAddr}))
 			}
 
@@ -159,12 +151,12 @@ func main() {
 				executors = append(executors, executor.NewCmdExecutor(ctx, executor.CmdExecutorArgs{
 					Logger:      logger,
 					Interactive: c.Bool("interactive"),
-					Command: func(context.Context) *exec.Cmd {
+					Commands: func(context.Context) []*exec.Cmd {
 						cmd := exec.CommandContext(ctx, execCmd, execArgs...)
 						cmd.Stdout = os.Stdout
 						cmd.Stderr = os.Stderr
 						cmd.Stdin = os.Stdin
-						return cmd
+						return []*exec.Cmd{cmd}
 					},
 				}))
 			}
@@ -177,7 +169,7 @@ func main() {
 		},
 	}
 
-	ctx, stop := signal.NotifyContext(context.TODO(), syscall.SIGINT, syscall.SIGTERM, syscall.SIGABRT)
+	ctx, stop := signal.NotifyContext(context.TODO(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
 	if err := cmd.Run(ctx, os.Args); err != nil {
