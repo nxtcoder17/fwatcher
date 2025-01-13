@@ -13,6 +13,7 @@ type CmdExecutor struct {
 	logger    *slog.Logger
 	parentCtx context.Context
 	newCmds   func(context.Context) []*exec.Cmd
+	commands  []func(context.Context) *exec.Cmd
 
 	interactive bool
 
@@ -21,8 +22,9 @@ type CmdExecutor struct {
 }
 
 type CmdExecutorArgs struct {
-	Logger      *slog.Logger
-	Commands    func(context.Context) []*exec.Cmd
+	Logger *slog.Logger
+	// Commands    func(context.Context) []*exec.Cmd
+	Commands    []func(context.Context) *exec.Cmd
 	Interactive bool
 }
 
@@ -32,9 +34,10 @@ func NewCmdExecutor(ctx context.Context, args CmdExecutorArgs) *CmdExecutor {
 	}
 
 	return &CmdExecutor{
-		parentCtx:   ctx,
-		logger:      args.Logger.With("component", "cmd-executor"),
-		newCmds:     args.Commands,
+		parentCtx: ctx,
+		logger:    args.Logger.With("component", "cmd-executor"),
+		// newCmds:     args.Commands,
+		commands:    args.Commands,
 		mu:          sync.Mutex{},
 		interactive: args.Interactive,
 	}
@@ -49,14 +52,14 @@ func (ex *CmdExecutor) OnWatchEvent(ev Event) error {
 
 // Start implements Executor.
 func (ex *CmdExecutor) Start() error {
-	ex.mu.Lock()
-	ctx, cf := context.WithCancel(ex.parentCtx)
-	ex.abort = cf
-	ex.mu.Unlock()
+	for i := range ex.commands {
+		ex.mu.Lock()
+		ctx, cf := context.WithCancel(ex.parentCtx)
+		ex.abort = cf
+		ex.mu.Unlock()
 
-	cmds := ex.newCmds(ctx)
+		cmd := ex.commands[i](ctx)
 
-	for _, cmd := range cmds {
 		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 		if ex.interactive {
 			cmd.Stdin = os.Stdin
@@ -100,11 +103,12 @@ func (ex *CmdExecutor) Start() error {
 
 		if err := syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL); err != nil {
 			if err == syscall.ESRCH {
-				return nil
+				continue
 			}
 			ex.logger.Error("failed to kill, got", "err", err)
 			return err
 		}
+		ex.logger.Debug("command fully executed and processed")
 	}
 
 	return nil
