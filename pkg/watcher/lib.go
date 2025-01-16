@@ -11,32 +11,63 @@ import (
 func (f *Watcher) WatchAndExecute(ctx context.Context, executors []executor.Executor) error {
 	var wg sync.WaitGroup
 
-	for _i := range executors {
-		i := _i
+	l := len(executors)
+
+	for i := 0; i < l-1; i++ {
 		ex := executors[i]
 
-		wg.Add(1)
 		go func() {
-			defer wg.Done()
-			if err := ex.Start(); err != nil {
-				f.Logger.Error("got", "err", err)
-			}
-			f.Logger.Debug("1. executor start finished", "executor", i)
-		}()
-
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
 			<-ctx.Done()
 			ex.Stop()
-			f.Logger.Debug("2. passed context is DONE", "executor", i)
 		}()
+
+		switch ex.(type) {
+		case *executor.SSEExectuor:
+			{
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					ex.Start()
+				}()
+			}
+		default:
+			{
+				if err := ex.Start(); err != nil {
+					return err
+				}
+
+				// INFO: just for cleanup purposes
+				if err := ex.Stop(); err != nil {
+					return err
+				}
+			}
+		}
 	}
+
+	ex := executors[l-1]
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		if err := ex.Start(); err != nil {
+			f.Logger.Error("got", "err", err)
+		}
+		f.Logger.Debug("final executor start finished")
+	}()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		<-ctx.Done()
+		ex.Stop()
+		f.Logger.Debug("2. context cancelled")
+	}()
 
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		f.Watch(ctx)
+		f.Logger.Debug("3. watcher closed")
 	}()
 
 	counter := 0

@@ -30,6 +30,10 @@ tasks:
           upx ./bin/{{.binary}}
         fi
 
+  test:executor:
+    cmds:
+      - go test ./pkg/executor/...
+
   build:dev:
     cmds:
       - go build -o ./bin/fwatcher ./cmd

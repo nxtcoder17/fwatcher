@@ -77,9 +77,9 @@ func (ex *CmdExecutor) Start() error {
 
 		select {
 		case <-ctx.Done():
-			ex.logger.Debug("process context done")
+			ex.logger.Debug("process finished (context cancelled)")
 		case err := <-done:
-			ex.logger.Debug("process wait completed, got", "err", err)
+			ex.logger.Debug("process finished (wait completed), got", "err", err)
 		}
 
 		ex.logger.Debug("process", "pid", cmd.Process.Pid)

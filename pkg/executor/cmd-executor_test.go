@@ -37,7 +37,7 @@ func Test_Exectuor_Start(t *testing.T) {
 			},
 		},
 		{
-			name: "2. with multiple commands",
+			name: "2. testing",
 			commands: func(stdout io.Writer) []func(c context.Context) *exec.Cmd {
 				return []func(c context.Context) *exec.Cmd{
 					newCmd(stdout, "echo", "hi"),

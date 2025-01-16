@@ -151,12 +151,14 @@ func main() {
 				executors = append(executors, executor.NewCmdExecutor(ctx, executor.CmdExecutorArgs{
 					Logger:      logger,
 					Interactive: c.Bool("interactive"),
-					Commands: func(context.Context) []*exec.Cmd {
-						cmd := exec.CommandContext(ctx, execCmd, execArgs...)
-						cmd.Stdout = os.Stdout
-						cmd.Stderr = os.Stderr
-						cmd.Stdin = os.Stdin
-						return []*exec.Cmd{cmd}
+					Commands: []func(context.Context) *exec.Cmd{
+						func(c context.Context) *exec.Cmd {
+							cmd := exec.CommandContext(ctx, execCmd, execArgs...)
+							cmd.Stdout = os.Stdout
+							cmd.Stderr = os.Stderr
+							cmd.Stdin = os.Stdin
+							return cmd
+						},
 					},
 				}))
 			}
