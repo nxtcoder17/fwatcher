@@ -27,6 +27,8 @@ type Watcher struct {
 	cooldownDuration time.Duration
 
 	eventsCh chan Event
+
+	shouldLogWatchEvents bool
 }
 
 // GetEvents implements Watcher.
@@ -73,7 +75,6 @@ func (f Watcher) ignoreEvent(event fsnotify.Event) (ignore bool, reason string) 
 
 	for _, suffix := range f.IgnoreSuffixes {
 		if strings.HasSuffix(event.Name, suffix) {
-			f.Logger.Debug("file is ignored", "file", event.Name)
 			return true, fmt.Sprintf("because, file has suffix (%s), which is in ignore suffixes array(%+v)", suffix, f.IgnoreSuffixes)
 		}
 	}
@@ -84,7 +85,6 @@ func (f Watcher) ignoreEvent(event fsnotify.Event) (ignore bool, reason string) 
 
 	matched := false
 	for _, suffix := range f.OnlySuffixes {
-		f.Logger.Debug(fmt.Sprintf("[only-suffix] suffix: (%s), event.name: %s", suffix, event.Name))
 		if strings.HasSuffix(event.Name, suffix) {
 			matched = true
 			break
@@ -127,27 +127,39 @@ func (f *Watcher) Watch(ctx context.Context) {
 				}
 
 				t := time.Now()
-				f.Logger.Debug(fmt.Sprintf("event %+v received", event))
+				if f.shouldLogWatchEvents {
+					f.Logger.Debug(fmt.Sprintf("event %+v received", event))
+				}
 
 				if ignore, reason := f.ignoreEvent(event); ignore {
-					f.Logger.Debug("IGNORING", "event.name", event.Name, "reason", reason)
+					if f.shouldLogWatchEvents {
+						f.Logger.Debug("IGNORING", "event.name", event.Name, "reason", reason)
+					}
 					continue
 				}
 
-				f.Logger.Debug("PROCESSING", "event.name", event.Name, "event.op", event.Op.String())
+				if f.shouldLogWatchEvents {
+					f.Logger.Debug("PROCESSING", "event.name", event.Name, "event.op", event.Op.String())
+				}
 
 				if time.Since(lastProcessingTime) < f.cooldownDuration {
-					f.Logger.Debug(fmt.Sprintf("too many events under %s, ignoring...", f.cooldownDuration.String()), "event.name", event.Name)
+					if f.shouldLogWatchEvents {
+						f.Logger.Debug(fmt.Sprintf("too many events under %s, ignoring...", f.cooldownDuration.String()), "event.name", event.Name)
+					}
 					continue
 				}
 
 				f.eventsCh <- Event(event)
 
-				f.Logger.Debug("watch loop completed", "took", fmt.Sprintf("%dms", time.Since(t).Milliseconds()))
+				if f.shouldLogWatchEvents {
+					f.Logger.Debug("watch loop completed", "took", fmt.Sprintf("%dms", time.Since(t).Milliseconds()))
+				}
 			}
 
 		case <-ctx.Done():
-			f.Logger.Debug("watcher is closing", "reason", "context closed")
+			if f.shouldLogWatchEvents {
+				f.Logger.Debug("watcher is closing", "reason", "context closed")
+			}
 			close(f.eventsCh)
 			f.watcher.Close()
 			return
@@ -175,7 +187,9 @@ func (f *Watcher) RecursiveAdd(dirs ...string) error {
 		}
 
 		if _, ok := f.ExcludeDirs[filepath.Base(dir)]; ok {
-			f.Logger.Debug("EXCLUDED from watchlist", "dir", dir)
+			if f.shouldLogWatchEvents {
+				f.Logger.Debug("EXCLUDED from watchlist", "dir", dir)
+			}
 			continue
 		}
 
@@ -206,7 +220,9 @@ func (f *Watcher) addToWatchList(dir string) error {
 		return err
 	}
 	f.directoryCount++
-	f.Logger.Debug("ADDED to watchlist", "dir", dir, "count", f.directoryCount)
+	if f.shouldLogWatchEvents {
+		f.Logger.Debug("ADDED to watchlist", "dir", dir, "count", f.directoryCount)
+	}
 	return nil
 }
 
@@ -226,6 +242,8 @@ type WatcherArgs struct {
 
 	CooldownDuration *time.Duration
 	Interactive      bool
+
+	ShouldLogWatchEvents bool
 }
 
 // DefaultIgnoreList is list of directories that are mostly ignored
@@ -257,7 +275,9 @@ func NewWatcher(ctx context.Context, args WatcherArgs) (*Watcher, error) {
 
 	excludeDirs := map[string]struct{}{}
 	for _, dir := range args.IgnoreDirs {
-		args.Logger.Debug("EXCLUDED from watching", "dir", dir)
+		if args.ShouldLogWatchEvents {
+			args.Logger.Debug("EXCLUDED from watching", "dir", dir)
+		}
 		excludeDirs[dir] = struct{}{}
 	}
 
@@ -295,7 +315,8 @@ func NewWatcher(ctx context.Context, args WatcherArgs) (*Watcher, error) {
 		cooldownDuration: cooldown,
 		watchingDirs:     make(map[string]struct{}),
 
-		eventsCh: make(chan Event),
+		shouldLogWatchEvents: args.ShouldLogWatchEvents,
+		eventsCh:             make(chan Event),
 	}
 
 	if err := fsw.RecursiveAdd(args.WatchDirs...); err != nil {
