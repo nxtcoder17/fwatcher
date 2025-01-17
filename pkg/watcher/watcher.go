@@ -20,8 +20,9 @@ type Watcher struct {
 	Logger         *slog.Logger
 	OnlySuffixes   []string
 	IgnoreSuffixes []string
-	ExcludeDirs    map[string]struct{}
-	watchingDirs   map[string]struct{}
+
+	ExcludeDirs  map[string]struct{}
+	watchingDirs map[string]struct{}
 
 	cooldownDuration time.Duration
 
@@ -237,6 +238,10 @@ var DefaultIgnoreList = []string{
 	".log",         // logs
 }
 
+var DefaultIgnoreExtensions = []string{
+	".log",
+}
+
 func NewWatcher(ctx context.Context, args WatcherArgs) (*Watcher, error) {
 	if args.Logger == nil {
 		args.Logger = slog.Default()
@@ -254,6 +259,20 @@ func NewWatcher(ctx context.Context, args WatcherArgs) (*Watcher, error) {
 	for _, dir := range args.IgnoreDirs {
 		args.Logger.Debug("EXCLUDED from watching", "dir", dir)
 		excludeDirs[dir] = struct{}{}
+	}
+
+	for _, dir := range args.WatchDirs {
+		if strings.HasPrefix(dir, "-") {
+			excludeDirs[dir[1:]] = struct{}{}
+		}
+	}
+
+	args.IgnoreExtensions = append(args.IgnoreExtensions, DefaultIgnoreExtensions...)
+
+	for _, ext := range args.WatchExtensions {
+		if strings.HasPrefix(ext, "-") {
+			excludeDirs[ext[1:]] = struct{}{}
+		}
 	}
 
 	watcher, err := fsnotify.NewWatcher()

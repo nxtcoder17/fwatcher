@@ -74,6 +74,7 @@ func (f *Watcher) WatchAndExecute(ctx context.Context, executors []executor.Exec
 	for event := range f.GetEvents() {
 		f.Logger.Debug("received", "event", event)
 		counter += 1
+
 		f.Logger.Info(fmt.Sprintf("[RELOADING (%d)] due changes in %s", counter, event.Name))
 
 		for i := range executors {

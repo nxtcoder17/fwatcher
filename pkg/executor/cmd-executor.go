@@ -77,9 +77,11 @@ func (ex *CmdExecutor) Start() error {
 
 		select {
 		case <-ctx.Done():
-			ex.logger.Debug("process finished (context cancelled)")
+			ex.logger.Debug("process finished (context cancelled)", "command", cmd.String())
+		case <-ex.parentCtx.Done():
+			ex.logger.Debug("process finished (parent context cancelled)", "command", cmd.String())
 		case err := <-done:
-			ex.logger.Debug("process finished (wait completed), got", "err", err)
+			ex.logger.Debug("process finished (wait completed), got", "err", err, "command", cmd.String())
 		}
 
 		ex.logger.Debug("process", "pid", cmd.Process.Pid)
@@ -101,11 +103,13 @@ func (ex *CmdExecutor) Start() error {
 			}
 		}
 
+		ex.logger.Debug("about to kill", "process", cmd.Process.Pid)
 		if err := syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL); err != nil {
+			ex.logger.Error("failed to kill, got", "err", err)
 			if err == syscall.ESRCH {
 				continue
 			}
-			ex.logger.Error("failed to kill, got", "err", err)
+			// ex.logger.Error("failed to kill, got", "err", err)
 			return err
 		}
 		ex.logger.Debug("command fully executed and processed")

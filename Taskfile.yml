@@ -34,6 +34,12 @@ tasks:
     cmds:
       - go test ./pkg/executor/...
 
+  test:watcher:
+    env:
+      DEBUG: false
+    cmds:
+      - go test -json ./pkg/watcher/... | gotestfmt
+
   build:dev:
     cmds:
       - go build -o ./bin/fwatcher ./cmd

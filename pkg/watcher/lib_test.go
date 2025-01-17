@@ -16,8 +16,13 @@ import (
 )
 
 func Test_Watcher_WatchAndExecute(t *testing.T) {
+	logLevel := slog.LevelInfo
+	if os.Getenv("DEBUG") == "true" {
+		logLevel = slog.LevelDebug
+	}
+
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
-		Level: slog.LevelDebug,
+		Level: logLevel,
 	}))
 
 	slog.SetDefault(logger)
