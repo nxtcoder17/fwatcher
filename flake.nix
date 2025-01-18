@@ -20,6 +20,8 @@
             pre-commit
 
             go_1_22
+            gotestfmt
+
             upx
             go-task
           ];

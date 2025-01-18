@@ -30,9 +30,19 @@ tasks:
           upx ./bin/{{.binary}}
         fi
 
+  test:executor:
+    cmds:
+      - go test ./pkg/executor/...
+
+  test:watcher:
+    env:
+      DEBUG: false
+    cmds:
+      - go test -json ./pkg/watcher/... | gotestfmt
+
   build:dev:
     cmds:
-      - go build -o ./bin/fwatcher-dev ./cmd
+      - go build -o ./bin/fwatcher ./cmd
 
   example:http-server:
     cmds:
