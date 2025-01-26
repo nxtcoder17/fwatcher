@@ -274,6 +274,7 @@ func NewWatcher(ctx context.Context, args WatcherArgs) (*Watcher, error) {
 	}
 
 	excludeDirs := map[string]struct{}{}
+
 	for _, dir := range args.IgnoreDirs {
 		if args.ShouldLogWatchEvents {
 			args.Logger.Debug("EXCLUDED from watching", "dir", dir)
@@ -282,8 +283,12 @@ func NewWatcher(ctx context.Context, args WatcherArgs) (*Watcher, error) {
 	}
 
 	for _, dir := range args.WatchDirs {
-		if strings.HasPrefix(dir, "-") {
-			excludeDirs[dir[1:]] = struct{}{}
+		if args.ShouldLogWatchEvents {
+			args.Logger.Debug("watch-dirs", "dir", dir)
+		}
+		d := filepath.Base(dir)
+		if strings.HasPrefix(d, "-") {
+			excludeDirs[d[1:]] = struct{}{}
 		}
 	}
 
