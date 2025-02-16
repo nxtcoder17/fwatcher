@@ -4,9 +4,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"time"
+
+	"github.com/nxtcoder17/go.pkgs/log"
 )
 
 /*
@@ -18,7 +19,7 @@ type SSEExectuor struct {
 	ch     chan Event
 	server *http.Server
 
-	logger *slog.Logger
+	logger log.Logger
 }
 
 // OnWatchEvent implements Executor.
@@ -27,7 +28,7 @@ func (s *SSEExectuor) OnWatchEvent(event Event) error {
 	case s.ch <- event:
 		return nil
 	case <-time.After(20 * time.Millisecond):
-		slog.Warn("SSE event is being ignored")
+		s.logger.Warn("SSE event is being ignored")
 		return nil
 	}
 }
@@ -54,7 +55,7 @@ var _ Executor = (*SSEExectuor)(nil)
 type SSEExecutorArgs struct {
 	Addr string
 
-	Logger *slog.Logger
+	Logger log.Logger
 }
 
 func NewSSEExecutor(args SSEExecutorArgs) *SSEExectuor {
@@ -62,10 +63,15 @@ func NewSSEExecutor(args SSEExecutorArgs) *SSEExectuor {
 
 	mux := http.NewServeMux()
 
+	logger := args.Logger
+	if logger == nil {
+		logger = log.New(log.Options{})
+	}
+
 	mux.HandleFunc("/event", func(w http.ResponseWriter, req *http.Request) {
 		flusher, ok := w.(http.Flusher)
 		if !ok {
-			slog.Error("failed to create http.Flusher, can not use SSE")
+			logger.Error(fmt.Errorf("failed to create http.Flusher, can not use SSE"), "")
 		}
 		for {
 			event := <-ch
@@ -79,11 +85,6 @@ func NewSSEExecutor(args SSEExecutorArgs) *SSEExectuor {
 			flusher.Flush()
 		}
 	})
-
-	logger := args.Logger
-	if logger == nil {
-		logger = slog.Default()
-	}
 
 	server := http.Server{
 		Addr:    args.Addr,

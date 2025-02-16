@@ -2,57 +2,53 @@ package executor
 
 import (
 	"context"
-	"log/slog"
 	"os"
 	"os/exec"
+	"strings"
 	"sync"
 	"syscall"
+
+	"github.com/nxtcoder17/go.pkgs/log"
 )
 
-// type CommandGroup struct {
-// 	Commands   []func(context.Context) *exec.Cmd
-// 	Parallel   bool
-// 	Sequential bool
-// }
+type CommandGroup struct {
+	Groups   []CommandGroup
+	Commands []func(context.Context) *exec.Cmd
+	Parallel bool
+}
 
 type CmdExecutor struct {
-	logger    *slog.Logger
+	logger    log.Logger
 	parentCtx context.Context
-	commands  []func(context.Context) *exec.Cmd
+	commands  []CommandGroup
+	parallel  bool
 
 	interactive bool
 
 	mu sync.Mutex
 
 	kill func() error
-
-	Parallel []ParallelCommands
-}
-
-type ParallelCommands struct {
-	Index int
-	Len   int
 }
 
 type CmdExecutorArgs struct {
-	Logger      *slog.Logger
-	Commands    []func(context.Context) *exec.Cmd
+	Logger      log.Logger
+	Commands    []CommandGroup
+	Parallel    bool
 	Interactive bool
-	Parallel    []ParallelCommands
 }
 
 func NewCmdExecutor(ctx context.Context, args CmdExecutorArgs) *CmdExecutor {
 	if args.Logger == nil {
-		args.Logger = slog.Default()
+		args.Logger = log.New(log.Options{})
 	}
 
 	return &CmdExecutor{
 		parentCtx:   ctx,
 		logger:      args.Logger,
 		commands:    args.Commands,
+		parallel:    args.Parallel,
 		mu:          sync.Mutex{},
 		interactive: args.Interactive,
-		Parallel:    args.Parallel,
 	}
 }
 
@@ -63,20 +59,13 @@ func (ex *CmdExecutor) OnWatchEvent(ev Event) error {
 	return nil
 }
 
-func killPID(pid int, logger ...*slog.Logger) error {
-	var l *slog.Logger
-	if len(logger) > 0 {
-		l = logger[0]
-	} else {
-		l = slog.Default()
-	}
-
-	l.Debug("about to kill", "process", pid)
+func killPID(pid int, logger log.Logger) error {
+	logger.Debug("about to kill", "process", pid)
 	if err := syscall.Kill(-pid, syscall.SIGKILL); err != nil {
 		if err == syscall.ESRCH {
 			return nil
 		}
-		l.Error("failed to kill, got", "err", err)
+		logger.Error(err, "failed to kill")
 		return err
 	}
 	return nil
@@ -91,6 +80,9 @@ func (ex *CmdExecutor) exec(newCmd func(context.Context) *exec.Cmd) error {
 	defer cf()
 
 	cmd := newCmd(ctx)
+	if cmd == nil {
+		return nil
+	}
 
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if ex.interactive {
@@ -102,10 +94,14 @@ func (ex *CmdExecutor) exec(newCmd func(context.Context) *exec.Cmd) error {
 		return err
 	}
 
-	logger := ex.logger.With("pid", cmd.Process.Pid, "command", cmd.String())
+	logger := ex.logger.With("pid", cmd.Process.Pid, "cmd", strings.Join(strings.Split(cmd.String(), " ")[2:], " "))
+
+	logger.Debug("process started")
+
+	pid := cmd.Process.Pid
 
 	ex.kill = func() error {
-		return killPID(cmd.Process.Pid, logger)
+		return killPID(pid, logger)
 	}
 
 	exitErr := make(chan error, 1)
@@ -115,13 +111,21 @@ func (ex *CmdExecutor) exec(newCmd func(context.Context) *exec.Cmd) error {
 			exitErr <- err
 			logger.Debug("process finished (wait completed), got", "err", err)
 		}
-		cf()
+		exitErr <- nil
 	}()
 
 	select {
 	case <-ctx.Done():
-		logger.Debug("process finished (context cancelled)")
+		logger.Debug("process finished (context cancelled)", "reason", ctx.Err())
+
 	case err := <-exitErr:
+		if err == nil {
+			// INFO: command exited with non-zero exit code
+			logger.Debug("command SUCCESS", "exit.code", 0)
+			return nil
+		}
+
+		logger.Error(err, "command failed")
 		if exitErr, ok := err.(*exec.ExitError); ok {
 			logger.Debug("process finished", "exit.code", exitErr.ExitCode())
 			if exitErr.ExitCode() != 0 {
@@ -142,7 +146,7 @@ func (ex *CmdExecutor) exec(newCmd func(context.Context) *exec.Cmd) error {
 		err = proc.Signal(syscall.SIGTERM)
 		if err != nil {
 			if err != syscall.ESRCH {
-				logger.Error("failed to kill, got", "err", err)
+				logger.Error(err, "failed to kill")
 				return err
 			}
 			return err
@@ -157,61 +161,102 @@ func (ex *CmdExecutor) exec(newCmd func(context.Context) *exec.Cmd) error {
 	return nil
 }
 
+func (ex *CmdExecutor) execCommandGroup(cg CommandGroup) error {
+	if cg.Parallel {
+		var wg sync.WaitGroup
+
+		ex.logger.Debug("PARALLEL", "len(cmds)", len(cg.Commands))
+		for i := range cg.Commands {
+			cmd := cg.Commands[i]
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+
+				ce := CmdExecutor{
+					logger:      ex.logger.With("executor", i),
+					parentCtx:   ex.parentCtx,
+					interactive: ex.interactive,
+					mu:          sync.Mutex{},
+				}
+
+				if err := ce.exec(cmd); err != nil {
+					ex.logger.Error(err, "command failed")
+					return
+				}
+			}()
+		}
+
+		for i := range cg.Groups {
+			grp := cg.Groups[i]
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				if err := ex.execCommandGroup(grp); err != nil {
+					ex.logger.Error(err, "command group execution failed")
+					return
+				}
+			}()
+		}
+
+		wg.Wait()
+		return nil
+	}
+
+	for i := range cg.Commands {
+		cmd := cg.Commands[i]
+		if err := ex.exec(cmd); err != nil {
+			return err
+		}
+	}
+
+	for i := range cg.Groups {
+		grp := cg.Groups[i]
+		if err := ex.execCommandGroup(grp); err != nil {
+			ex.logger.Error(err, "command group execution failed")
+			return err
+		}
+	}
+
+	return nil
+}
+
 // Start implements Executor.
 func (ex *CmdExecutor) Start() error {
 	ex.mu.Lock()
 	defer ex.mu.Unlock()
 
-	var wg sync.WaitGroup
+	if ex.parallel {
+		var wg sync.WaitGroup
 
-	for i := 0; i < len(ex.commands); i++ {
-		newCmd := ex.commands[i]
+		for i := range ex.commands {
+			cg := ex.commands[i]
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
 
-		ex.logger.Info("HELLO", "idx", i, "ex.parallel", ex.Parallel)
-		isParallel := false
-
-		for _, p := range ex.Parallel {
-			if p.Index == i {
-				isParallel = true
-				for k := i; k <= i+p.Len; k++ {
-					wg.Add(1)
-					go func() {
-						defer wg.Done()
-						if err := ex.exec(newCmd); err != nil {
-							ex.logger.Info("executing, got", "err", err)
-							// handle error
-						}
-					}()
+				ce := CmdExecutor{
+					logger:      ex.logger.With("executor", i),
+					parentCtx:   ex.parentCtx,
+					interactive: ex.interactive,
+					mu:          sync.Mutex{},
 				}
 
-				i = i + p.Len - 1
-			}
-			break
+				if err := ce.execCommandGroup(cg); err != nil {
+					ex.logger.Error(err, "exec command group")
+					return
+				}
+			}()
 		}
 
-		if isParallel {
-			continue
-		}
-
-		// if ex.Parallel {
-		// 	wg.Add(1)
-		// 	go func() {
-		// 		defer wg.Add(1)
-		// 		if err := ex.exec(newCmd); err != nil {
-		// 			// handle error
-		// 		}
-		// 	}()
-		// 	continue
-		// }
-
-		if err := ex.exec(newCmd); err != nil {
-			ex.logger.Error("cmd failed with", "err", err)
-			return err
-		}
+		wg.Wait()
+		return nil
 	}
 
-	if len(ex.Parallel) > 0 {
-		wg.Wait()
+	for i := range ex.commands {
+		cg := ex.commands[i]
+		if err := ex.execCommandGroup(cg); err != nil {
+			return err
+		}
 	}
 
 	return nil

@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/nxtcoder17/fwatcher/pkg/executor"
-	"github.com/nxtcoder17/fwatcher/pkg/logging"
 	"github.com/nxtcoder17/fwatcher/pkg/watcher"
+	"github.com/nxtcoder17/go.pkgs/log"
 	"github.com/urfave/cli/v3"
 )
 
@@ -84,11 +84,11 @@ func main() {
 			},
 		},
 		Action: func(ctx context.Context, c *cli.Command) error {
-			logger := logging.NewSlogLogger(logging.SlogOptions{
-				ShowTimestamp:      false,
-				ShowCaller:         false,
-				ShowDebugLogs:      c.Bool("debug"),
-				SetAsDefaultLogger: true,
+			logger := log.New(log.Options{
+				Writer:        os.Stderr,
+				ShowTimestamp: false,
+				ShowCaller:    true,
+				ShowDebugLogs: c.Bool("debug"),
 			})
 
 			if c.NArg() == 0 {
@@ -151,13 +151,17 @@ func main() {
 				executors = append(executors, executor.NewCmdExecutor(ctx, executor.CmdExecutorArgs{
 					Logger:      logger,
 					Interactive: c.Bool("interactive"),
-					Commands: []func(context.Context) *exec.Cmd{
-						func(c context.Context) *exec.Cmd {
-							cmd := exec.CommandContext(ctx, execCmd, execArgs...)
-							cmd.Stdout = os.Stdout
-							cmd.Stderr = os.Stderr
-							cmd.Stdin = os.Stdin
-							return cmd
+					Commands: []executor.CommandGroup{
+						{
+							Commands: []func(context.Context) *exec.Cmd{
+								func(c context.Context) *exec.Cmd {
+									cmd := exec.CommandContext(ctx, execCmd, execArgs...)
+									cmd.Stdout = os.Stdout
+									cmd.Stderr = os.Stderr
+									cmd.Stdin = os.Stdin
+									return cmd
+								},
+							},
 						},
 					},
 				}))
