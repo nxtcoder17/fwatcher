@@ -32,7 +32,7 @@ tasks:
 
   test:executor:
     cmds:
-      - go test ./pkg/executor/...
+      - go test -json ./pkg/executor/... | gotestfmt
 
   test:watcher:
     env:

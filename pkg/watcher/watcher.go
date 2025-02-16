@@ -3,13 +3,13 @@ package watcher
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/fsnotify/fsnotify"
+	"github.com/nxtcoder17/go.pkgs/log"
 )
 
 type Watcher struct {
@@ -17,7 +17,7 @@ type Watcher struct {
 
 	directoryCount int
 
-	Logger         *slog.Logger
+	Logger         log.Logger
 	OnlySuffixes   []string
 	IgnoreSuffixes []string
 
@@ -216,7 +216,7 @@ func (f *Watcher) RecursiveAdd(dirs ...string) error {
 
 func (f *Watcher) addToWatchList(dir string) error {
 	if err := f.watcher.Add(dir); err != nil {
-		f.Logger.Error("failed to add directory", "dir", dir, "err", err)
+		f.Logger.Error(err, "failed to add directory", "dir", dir)
 		return err
 	}
 	f.directoryCount++
@@ -231,7 +231,7 @@ func (f *Watcher) Close() error {
 }
 
 type WatcherArgs struct {
-	Logger *slog.Logger
+	Logger log.Logger
 
 	WatchDirs        []string
 	WatchExtensions  []string
@@ -262,7 +262,7 @@ var DefaultIgnoreExtensions = []string{
 
 func NewWatcher(ctx context.Context, args WatcherArgs) (*Watcher, error) {
 	if args.Logger == nil {
-		args.Logger = slog.Default()
+		args.Logger = log.New(log.Options{})
 	}
 
 	args.IgnoreDirs = append(args.IgnoreDirs, args.IgnoreList...)
@@ -302,7 +302,7 @@ func NewWatcher(ctx context.Context, args WatcherArgs) (*Watcher, error) {
 
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
-		args.Logger.Error("failed to create watcher, got", "err", err)
+		args.Logger.Error(err, "failed to create watcher")
 		return nil, err
 	}
 

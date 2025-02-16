@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"io"
-	"log/slog"
 	"os"
 	"os/exec"
 	"strings"
@@ -13,19 +12,13 @@ import (
 
 	"github.com/fsnotify/fsnotify"
 	"github.com/nxtcoder17/fwatcher/pkg/executor"
+	"github.com/nxtcoder17/go.pkgs/log"
 )
 
 func Test_Watcher_WatchAndExecute(t *testing.T) {
-	logLevel := slog.LevelInfo
-	if os.Getenv("DEBUG") == "true" {
-		logLevel = slog.LevelDebug
-	}
-
-	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
-		Level: logLevel,
-	}))
-
-	slog.SetDefault(logger)
+	logger := log.New(log.Options{
+		ShowDebugLogs: os.Getenv("DEBUG") == "true",
+	})
 
 	newCmd := func(stdout io.Writer, cmd string, args ...string) func(c context.Context) *exec.Cmd {
 		return func(c context.Context) *exec.Cmd {
@@ -50,8 +43,12 @@ func Test_Watcher_WatchAndExecute(t *testing.T) {
 				return []executor.Executor{
 					executor.NewCmdExecutor(ctx, executor.CmdExecutorArgs{
 						Logger: logger,
-						Commands: []func(context.Context) *exec.Cmd{
-							newCmd(stdout, "echo", "hi"),
+						Commands: []executor.CommandGroup{
+							{
+								Commands: []func(context.Context) *exec.Cmd{
+									newCmd(stdout, "echo", "hi"),
+								},
+							},
 						},
 						Interactive: false,
 					}),
@@ -71,9 +68,13 @@ func Test_Watcher_WatchAndExecute(t *testing.T) {
 				return []executor.Executor{
 					executor.NewCmdExecutor(ctx, executor.CmdExecutorArgs{
 						Logger: logger,
-						Commands: []func(context.Context) *exec.Cmd{
-							newCmd(stdout, "echo", "hi"),
-							newCmd(stdout, "echo", "hello"),
+						Commands: []executor.CommandGroup{
+							{
+								Commands: []func(context.Context) *exec.Cmd{
+									newCmd(stdout, "echo", "hi"),
+									newCmd(stdout, "echo", "hello"),
+								},
+							},
 						},
 						Interactive: false,
 					}),
@@ -94,17 +95,26 @@ func Test_Watcher_WatchAndExecute(t *testing.T) {
 				return []executor.Executor{
 					executor.NewCmdExecutor(ctx, executor.CmdExecutorArgs{
 						Logger: logger,
-						Commands: []func(context.Context) *exec.Cmd{
-							newCmd(stdout, "echo", "hi"),
+						Commands: []executor.CommandGroup{
+							{
+								Commands: []func(context.Context) *exec.Cmd{
+									newCmd(stdout, "echo", "hi"),
+								},
+							},
 						},
 						Interactive: false,
 					}),
 
 					executor.NewCmdExecutor(ctx, executor.CmdExecutorArgs{
 						Logger: logger,
-						Commands: []func(context.Context) *exec.Cmd{
-							newCmd(stdout, "echo", "hello"),
+						Commands: []executor.CommandGroup{
+							{
+								Commands: []func(context.Context) *exec.Cmd{
+									newCmd(stdout, "echo", "hello"),
+								},
+							},
 						},
+
 						Interactive: false,
 					}),
 				}
@@ -124,19 +134,29 @@ func Test_Watcher_WatchAndExecute(t *testing.T) {
 				return []executor.Executor{
 					executor.NewCmdExecutor(ctx, executor.CmdExecutorArgs{
 						Logger: logger,
-						Commands: []func(context.Context) *exec.Cmd{
-							newCmd(stdout, "echo", "hi"),
-							newCmd(stdout, "echo", "hello"),
+						Commands: []executor.CommandGroup{
+							{
+								Commands: []func(context.Context) *exec.Cmd{
+									newCmd(stdout, "echo", "hi"),
+									newCmd(stdout, "echo", "hello"),
+								},
+							},
 						},
+
 						Interactive: false,
 					}),
 
 					executor.NewCmdExecutor(ctx, executor.CmdExecutorArgs{
 						Logger: logger,
-						Commands: []func(context.Context) *exec.Cmd{
-							newCmd(stdout, "echo", "no hi"),
-							newCmd(stdout, "echo", "no hello"),
+						Commands: []executor.CommandGroup{
+							{
+								Commands: []func(context.Context) *exec.Cmd{
+									newCmd(stdout, "echo", "no hi"),
+									newCmd(stdout, "echo", "no hello"),
+								},
+							},
 						},
+
 						Interactive: false,
 					}),
 				}
@@ -160,8 +180,12 @@ func Test_Watcher_WatchAndExecute(t *testing.T) {
 				return []executor.Executor{
 					executor.NewCmdExecutor(ctx, executor.CmdExecutorArgs{
 						Logger: logger,
-						Commands: []func(context.Context) *exec.Cmd{
-							newCmd(stdout, "echo", "hi"),
+						Commands: []executor.CommandGroup{
+							{
+								Commands: []func(context.Context) *exec.Cmd{
+									newCmd(stdout, "echo", "hi"),
+								},
+							},
 						},
 						Interactive: false,
 					}),
@@ -188,8 +212,12 @@ func Test_Watcher_WatchAndExecute(t *testing.T) {
 				return []executor.Executor{
 					executor.NewCmdExecutor(ctx, executor.CmdExecutorArgs{
 						Logger: logger,
-						Commands: []func(context.Context) *exec.Cmd{
-							newCmd(stdout, "echo", "hi"),
+						Commands: []executor.CommandGroup{
+							{
+								Commands: []func(context.Context) *exec.Cmd{
+									newCmd(stdout, "echo", "hi"),
+								},
+							},
 						},
 						Interactive: false,
 					}),
@@ -217,10 +245,15 @@ func Test_Watcher_WatchAndExecute(t *testing.T) {
 				return []executor.Executor{
 					executor.NewCmdExecutor(ctx, executor.CmdExecutorArgs{
 						Logger: logger,
-						Commands: []func(context.Context) *exec.Cmd{
-							newCmd(stdout, "echo", "hi"),
-							newCmd(stdout, "echo", "hello"),
+						Commands: []executor.CommandGroup{
+							{
+								Commands: []func(context.Context) *exec.Cmd{
+									newCmd(stdout, "echo", "hi"),
+									newCmd(stdout, "echo", "hello"),
+								},
+							},
 						},
+
 						Interactive: false,
 					}),
 				}
@@ -249,10 +282,15 @@ func Test_Watcher_WatchAndExecute(t *testing.T) {
 				return []executor.Executor{
 					executor.NewCmdExecutor(ctx, executor.CmdExecutorArgs{
 						Logger: logger,
-						Commands: []func(context.Context) *exec.Cmd{
-							newCmd(stdout, "echo", "hi"),
-							newCmd(stdout, "echo", "hello"),
+						Commands: []executor.CommandGroup{
+							{
+								Commands: []func(context.Context) *exec.Cmd{
+									newCmd(stdout, "echo", "hi"),
+									newCmd(stdout, "echo", "hello"),
+								},
+							},
 						},
+
 						Interactive: false,
 					}),
 				}
@@ -282,8 +320,12 @@ func Test_Watcher_WatchAndExecute(t *testing.T) {
 				return []executor.Executor{
 					executor.NewCmdExecutor(ctx, executor.CmdExecutorArgs{
 						Logger: logger,
-						Commands: []func(context.Context) *exec.Cmd{
-							newCmd(stdout, "echo", "hi"),
+						Commands: []executor.CommandGroup{
+							{
+								Commands: []func(context.Context) *exec.Cmd{
+									newCmd(stdout, "echo", "hi"),
+								},
+							},
 						},
 						Interactive: false,
 					}),
@@ -310,8 +352,12 @@ func Test_Watcher_WatchAndExecute(t *testing.T) {
 				return []executor.Executor{
 					executor.NewCmdExecutor(ctx, executor.CmdExecutorArgs{
 						Logger: logger,
-						Commands: []func(context.Context) *exec.Cmd{
-							newCmd(stdout, "echo", "hi"),
+						Commands: []executor.CommandGroup{
+							{
+								Commands: []func(context.Context) *exec.Cmd{
+									newCmd(stdout, "echo", "hi"),
+								},
+							},
 						},
 						Interactive: false,
 					}),
@@ -342,10 +388,15 @@ func Test_Watcher_WatchAndExecute(t *testing.T) {
 				return []executor.Executor{
 					executor.NewCmdExecutor(ctx, executor.CmdExecutorArgs{
 						Logger: logger,
-						Commands: []func(context.Context) *exec.Cmd{
-							newCmd(stdout, "echo", "hi"),
-							newCmd(stdout, "echo", "hello"),
+						Commands: []executor.CommandGroup{
+							{
+								Commands: []func(context.Context) *exec.Cmd{
+									newCmd(stdout, "echo", "hi"),
+									newCmd(stdout, "echo", "hello"),
+								},
+							},
 						},
+
 						Interactive: false,
 					}),
 				}
@@ -375,10 +426,15 @@ func Test_Watcher_WatchAndExecute(t *testing.T) {
 				return []executor.Executor{
 					executor.NewCmdExecutor(ctx, executor.CmdExecutorArgs{
 						Logger: logger,
-						Commands: []func(context.Context) *exec.Cmd{
-							newCmd(stdout, "echo", "hi"),
-							newCmd(stdout, "echo", "hello"),
+						Commands: []executor.CommandGroup{
+							{
+								Commands: []func(context.Context) *exec.Cmd{
+									newCmd(stdout, "echo", "hi"),
+									newCmd(stdout, "echo", "hello"),
+								},
+							},
 						},
+
 						Interactive: false,
 					}),
 				}
@@ -409,10 +465,15 @@ func Test_Watcher_WatchAndExecute(t *testing.T) {
 
 					executor.NewCmdExecutor(ctx, executor.CmdExecutorArgs{
 						Logger: logger,
-						Commands: []func(context.Context) *exec.Cmd{
-							newCmd(stdout, "echo", "hi"),
-							newCmd(stdout, "echo", "hello"),
+						Commands: []executor.CommandGroup{
+							{
+								Commands: []func(context.Context) *exec.Cmd{
+									newCmd(stdout, "echo", "hi"),
+									newCmd(stdout, "echo", "hello"),
+								},
+							},
 						},
+
 						Interactive: false,
 					}),
 				}
