@@ -180,7 +180,7 @@ func (ex *CmdExecutor) execCommandGroup(cg CommandGroup) error {
 				}
 
 				if err := ce.exec(cmd); err != nil {
-					ex.logger.Error(err, "command failed")
+					ex.logger.Debug("command failed, got", "err", err)
 					return
 				}
 			}()
@@ -192,7 +192,7 @@ func (ex *CmdExecutor) execCommandGroup(cg CommandGroup) error {
 			go func() {
 				defer wg.Done()
 				if err := ex.execCommandGroup(grp); err != nil {
-					ex.logger.Error(err, "command group execution failed")
+					ex.logger.Debug("command group execution failed, got", "err", err)
 					return
 				}
 			}()
@@ -212,7 +212,7 @@ func (ex *CmdExecutor) execCommandGroup(cg CommandGroup) error {
 	for i := range cg.Groups {
 		grp := cg.Groups[i]
 		if err := ex.execCommandGroup(grp); err != nil {
-			ex.logger.Error(err, "command group execution failed")
+			ex.logger.Debug("command group execution failed, got", "err", err)
 			return err
 		}
 	}
@@ -242,7 +242,7 @@ func (ex *CmdExecutor) Start() error {
 				}
 
 				if err := ce.execCommandGroup(cg); err != nil {
-					ex.logger.Error(err, "exec command group")
+					ex.logger.Debug("exec command group, got", "err", err)
 					return
 				}
 			}()
