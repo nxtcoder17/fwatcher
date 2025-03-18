@@ -12,9 +12,11 @@ import (
 )
 
 type CommandGroup struct {
-	Groups   []CommandGroup
-	Commands []func(context.Context) *exec.Cmd
-	Parallel bool
+	Groups           []CommandGroup
+	Commands         []func(context.Context) *exec.Cmd
+	PreExecCommand   func(cmd *exec.Cmd)
+	PostExecCommmand func(cmd *exec.Cmd)
+	Parallel         bool
 }
 
 type CmdExecutor struct {
@@ -71,7 +73,12 @@ func killPID(pid int, logger log.Logger) error {
 	return nil
 }
 
-func (ex *CmdExecutor) exec(newCmd func(context.Context) *exec.Cmd) error {
+type execArgs struct {
+	PreExec  func(cmd *exec.Cmd)
+	PostExec func(cmd *exec.Cmd)
+}
+
+func (ex *CmdExecutor) exec(newCmd func(context.Context) *exec.Cmd, args execArgs) error {
 	if err := ex.parentCtx.Err(); err != nil {
 		return err
 	}
@@ -88,6 +95,10 @@ func (ex *CmdExecutor) exec(newCmd func(context.Context) *exec.Cmd) error {
 	if ex.interactive {
 		cmd.Stdin = os.Stdin
 		cmd.SysProcAttr.Foreground = true
+	}
+
+	if args.PreExec != nil {
+		args.PreExec(cmd)
 	}
 
 	if err := cmd.Start(); err != nil {
@@ -157,6 +168,10 @@ func (ex *CmdExecutor) exec(newCmd func(context.Context) *exec.Cmd) error {
 		return err
 	}
 
+	if args.PostExec != nil {
+		args.PostExec(cmd)
+	}
+
 	logger.Debug("command fully executed and processed")
 	return nil
 }
@@ -179,7 +194,10 @@ func (ex *CmdExecutor) execCommandGroup(cg CommandGroup) error {
 					mu:          sync.Mutex{},
 				}
 
-				if err := ce.exec(cmd); err != nil {
+				if err := ce.exec(cmd, execArgs{
+					PreExec:  cg.PreExecCommand,
+					PostExec: cg.PostExecCommmand,
+				}); err != nil {
 					ex.logger.Debug("command failed, got", "err", err)
 					return
 				}
@@ -204,7 +222,10 @@ func (ex *CmdExecutor) execCommandGroup(cg CommandGroup) error {
 
 	for i := range cg.Commands {
 		cmd := cg.Commands[i]
-		if err := ex.exec(cmd); err != nil {
+		if err := ex.exec(cmd, execArgs{
+			PreExec:  cg.PreExecCommand,
+			PostExec: cg.PostExecCommmand,
+		}); err != nil {
 			return err
 		}
 	}
