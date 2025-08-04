@@ -50,7 +50,7 @@ func (f *Watcher) WatchAndExecute(ctx context.Context, executors []executor.Exec
 	go func() {
 		defer wg.Done()
 		if err := ex.Start(); err != nil {
-			f.Logger.Error(err, "starting command")
+			f.Logger.Error("starting command", "err", err)
 		}
 		f.Logger.Debug("final executor start finished")
 	}()

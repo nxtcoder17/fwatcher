@@ -2,13 +2,12 @@ package executor
 
 import (
 	"context"
+	"log/slog"
 	"os"
 	"os/exec"
 	"strings"
 	"sync"
 	"syscall"
-
-	"github.com/nxtcoder17/go.pkgs/log"
 )
 
 type CommandGroup struct {
@@ -20,7 +19,7 @@ type CommandGroup struct {
 }
 
 type CmdExecutor struct {
-	logger    log.Logger
+	logger    *slog.Logger
 	parentCtx context.Context
 	commands  []CommandGroup
 	parallel  bool
@@ -33,7 +32,7 @@ type CmdExecutor struct {
 }
 
 type CmdExecutorArgs struct {
-	Logger      log.Logger
+	Logger      *slog.Logger
 	Commands    []CommandGroup
 	Parallel    bool
 	Interactive bool
@@ -41,7 +40,7 @@ type CmdExecutorArgs struct {
 
 func NewCmdExecutor(ctx context.Context, args CmdExecutorArgs) *CmdExecutor {
 	if args.Logger == nil {
-		args.Logger = log.New(log.Options{})
+		args.Logger = slog.Default()
 	}
 
 	return &CmdExecutor{
@@ -61,13 +60,13 @@ func (ex *CmdExecutor) OnWatchEvent(ev Event) error {
 	return nil
 }
 
-func killPID(pid int, logger log.Logger) error {
+func killPID(pid int, logger *slog.Logger) error {
 	logger.Debug("about to kill", "process", pid)
 	if err := syscall.Kill(-pid, syscall.SIGKILL); err != nil {
 		if err == syscall.ESRCH {
 			return nil
 		}
-		logger.Error(err, "failed to kill")
+		logger.Error("failed to kill", "err", err)
 		return err
 	}
 	return nil
@@ -136,7 +135,7 @@ func (ex *CmdExecutor) exec(newCmd func(context.Context) *exec.Cmd, args execArg
 			return nil
 		}
 
-		logger.Error(err, "command failed")
+		logger.Error("command failed", "err", err)
 		if exitErr, ok := err.(*exec.ExitError); ok {
 			logger.Debug("process finished", "exit.code", exitErr.ExitCode())
 			if exitErr.ExitCode() != 0 {
@@ -157,7 +156,7 @@ func (ex *CmdExecutor) exec(newCmd func(context.Context) *exec.Cmd, args execArg
 		err = proc.Signal(syscall.SIGTERM)
 		if err != nil {
 			if err != syscall.ESRCH {
-				logger.Error(err, "failed to kill")
+				logger.Error("failed to kill", "err", err)
 				return err
 			}
 			return err

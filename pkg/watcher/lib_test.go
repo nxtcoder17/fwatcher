@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"context"
 	"io"
-	"os"
+	"log/slog"
 	"os/exec"
 	"strings"
 	"testing"
@@ -12,14 +12,10 @@ import (
 
 	"github.com/fsnotify/fsnotify"
 	"github.com/nxtcoder17/fwatcher/pkg/executor"
-	"github.com/nxtcoder17/go.pkgs/log"
 )
 
 func Test_Watcher_WatchAndExecute(t *testing.T) {
-	logger := log.New(log.Options{
-		ShowDebugLogs: os.Getenv("DEBUG") == "true",
-	})
-
+	logger := slog.Default()
 	newCmd := func(stdout io.Writer, cmd string, args ...string) func(c context.Context) *exec.Cmd {
 		return func(c context.Context) *exec.Cmd {
 			cmd := exec.CommandContext(c, cmd, args...)
